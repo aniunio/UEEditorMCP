@@ -111,7 +111,7 @@ public:
 	/**
 	 * Resolve a type name string (e.g. "Float", "Vector", "PlayerStatusModel")
 	 * into an FEdGraphPinType. Supports all primitive types, common struct types,
-	 * and UObject subclass resolution via FindFirstObject/LoadClass.
+	 * enums, and UObject subclass resolution via FindFirstObject/LoadClass.
 	 *
 	 * @param TypeName   The type string to resolve.
 	 * @param OutPinType The resolved pin type.

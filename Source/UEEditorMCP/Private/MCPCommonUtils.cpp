@@ -747,6 +747,36 @@ bool FMCPCommonUtils::ResolvePinTypeFromString(const FString& TypeName, FEdGraph
 		return true;
 	}
 
+	// --- Enum ---
+	{
+		FString EnumName = TypeName;
+		const bool bExplicitEnum = TypeName.StartsWith(TEXT("Enum("), ESearchCase::IgnoreCase) && TypeName.EndsWith(TEXT(")"));
+		if (bExplicitEnum)
+		{
+			EnumName = TypeName.Mid(5, TypeName.Len() - 6).TrimStartAndEnd();
+		}
+
+		if (!EnumName.IsEmpty() && !EnumName.Equals(TEXT("Enum"), ESearchCase::IgnoreCase))
+		{
+			UEnum* FoundEnum = FindFirstObject<UEnum>(*EnumName, EFindFirstObjectOptions::None);
+			if (!FoundEnum && !EnumName.StartsWith(TEXT("E")))
+			{
+				FoundEnum = FindFirstObject<UEnum>(*(FString(TEXT("E")) + EnumName), EFindFirstObjectOptions::None);
+			}
+			if (!FoundEnum && EnumName.Contains(TEXT("/")))
+			{
+				FoundEnum = LoadObject<UEnum>(nullptr, *EnumName);
+			}
+
+			if (FoundEnum)
+			{
+				OutPinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+				OutPinType.PinSubCategoryObject = FoundEnum;
+				return true;
+			}
+		}
+	}
+
 	// --- Try to resolve as UObject subclass ---
 	{
 		FString ObjectClassName = TypeName;
@@ -798,7 +828,8 @@ bool FMCPCommonUtils::ResolvePinTypeFromString(const FString& TypeName, FEdGraph
 	OutError = FString::Printf(
 		TEXT("Unsupported type: '%s'. Supported: Boolean, Int, Int64, Float/Double, String, Name, Text, Byte, "
 			 "Vector, Vector2D, Rotator, Transform, LinearColor, IntPoint, Object, "
-			 "or any UObject/AActor subclass name (e.g. PlayerStatusModel, StaticMeshComponent)."),
+			 "or any UObject/AActor subclass name (e.g. PlayerStatusModel, StaticMeshComponent).")
+			 "Enum(EnumName) or enum asset/native path (e.g. ECharacterStatus, /Game/Path/E_MyEnum.E_MyEnum)",
 		*TypeName);
 	return false;
 }

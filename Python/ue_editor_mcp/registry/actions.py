@@ -1505,13 +1505,13 @@ _NODE_VARIABLE_ACTIONS = [
         id="variable.create",
         command="add_blueprint_variable",
         tags=("variable", "create", "add", "member"),
-        description="Add a member variable to a Blueprint (supports Boolean, Int, Float, Double, String, Vector, Rotator, Transform, and UObject types)",
+        description="Add a member variable to a Blueprint (supports Boolean, Int, Float, Double, String, Vector, Rotator, Transform, Enum, and UObject types)",
         input_schema={
             "type": "object",
             "properties": {
                 "blueprint_name": {"type": "string", "description": "Name of the Blueprint"},
                 "variable_name": {"type": "string", "description": "Name of the variable"},
-                "variable_type": {"type": "string", "description": "Type (Boolean, Integer, Float, Vector, String, Rotator, Transform, etc.)"},
+                "variable_type": {"type": "string", "description": "Type (Boolean, Integer, Float, Vector, String, Rotator, Transform, Object, UObject class name, or Enum)"},
                 "is_exposed": {"type": "boolean", "description": "Expose to editor"}
             },
             "required": ["blueprint_name", "variable_name", "variable_type"]
