@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/BlueprintActions.h"
 #include "MCPCommonUtils.h"
 #include "Engine/Blueprint.h"
@@ -20,12 +18,8 @@
 #include "EditorAssetLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/BoxComponent.h"
-#include "Components/SphereComponent.h"
 #include "Components/SceneComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
-#include "Camera/CameraComponent.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "ComponentReregisterContext.h"

@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "BlueprintAutoLayoutCommands.h"
 
 #define LOCTEXT_NAMESPACE "BlueprintAutoLayout"

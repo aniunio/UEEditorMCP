@@ -30,6 +30,7 @@ def register_all_actions(registry: ActionRegistry) -> None:
     registry.register_many(_FUNCTION_MGMT_ACTIONS)
     registry.register_many(_STRUCT_SWITCH_ACTIONS)
     registry.register_many(_MATERIAL_ACTIONS)
+    registry.register_many(_NIAGARA_ACTIONS)
     registry.register_many(_WIDGET_ACTIONS)
     registry.register_many(_INPUT_ACTIONS)
     registry.register_many(_ASYNC_ACTION_ACTIONS)
@@ -351,6 +352,34 @@ _EDITOR_ACTIONS = [
         examples=({"name": "MyLight", "type": "PointLight", "location": [0, 0, 200]},),
     ),
     ActionDef(
+        id="editor.spawn_static_mesh_actor",
+        command="spawn_static_mesh_actor",
+        tags=("editor", "actor", "static-mesh", "spawn", "level"),
+        description="Spawn a StaticMeshActor in the current level and assign a StaticMesh asset",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Requested actor name and label"},
+                "static_mesh": {"type": "string", "description": "StaticMesh object path"},
+                "location": {"type": "array", "items": {"type": "number"}, "description": "[x, y, z]"},
+                "rotation": {"type": "array", "items": {"type": "number"}, "description": "[pitch, yaw, roll]"},
+                "scale": {"type": "array", "items": {"type": "number"}, "description": "[x, y, z]"},
+                "folder_path": {"type": "string", "description": "Optional World Outliner folder path"},
+                "select": {"type": "boolean", "description": "Select the spawned actor (default: true)"},
+                "focus": {"type": "boolean", "description": "Move the active viewport near the spawned actor (default: false)"},
+            },
+            "required": ["name", "static_mesh"],
+        },
+        examples=(
+            {
+                "name": "AI_Placed_Cube_01",
+                "static_mesh": "/Engine/BasicShapes/Cube.Cube",
+                "location": [0, 0, 100],
+                "scale": [1, 1, 1],
+            },
+        ),
+    ),
+    ActionDef(
         id="editor.delete_actor",
         command="delete_actor",
         tags=("editor", "actor", "delete", "remove"),
@@ -412,6 +441,40 @@ _EDITOR_ACTIONS = [
         },
     ),
     ActionDef(
+        id="editor.set_static_mesh_actor_material",
+        command="set_static_mesh_actor_material",
+        tags=("editor", "actor", "static-mesh", "material", "set"),
+        description="Set one or more material slots on a StaticMeshActor's StaticMeshComponent",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "actor_name": {"type": "string", "description": "Name of the StaticMeshActor"},
+                "material": {"type": "string", "description": "Material path for single-slot mode"},
+                "slot_index": {"type": "integer", "description": "Material slot index for single-slot mode (default: 0)"},
+                "materials": {
+                    "type": "array",
+                    "description": "Batch material assignments",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "slot_index": {"type": "integer"},
+                            "material": {"type": "string"},
+                        },
+                        "required": ["slot_index", "material"],
+                    },
+                },
+            },
+            "required": ["actor_name"],
+        },
+        examples=(
+            {
+                "actor_name": "AI_Placed_Cube_01",
+                "slot_index": 0,
+                "material": "/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial",
+            },
+        ),
+    ),
+    ActionDef(
         id="editor.focus_viewport",
         command="focus_viewport",
         tags=("editor", "viewport", "camera", "focus"),
@@ -425,6 +488,14 @@ _EDITOR_ACTIONS = [
                 "orientation": {"type": "array", "items": {"type": "number"}, "description": "[pitch, yaw, roll]"}
             }
         },
+    ),
+    ActionDef(
+        id="editor.capture_viewport",
+        command="capture_viewport",
+        tags=("editor", "viewport", "camera", "screenshot", "image", "base64", "read"),
+        description="Capture the active Level Viewport as a PNG image and return it as base64/ImageContent",
+        input_schema={"type": "object", "properties": {}},
+        capabilities=("read",),
     ),
     ActionDef(
         id="editor.get_viewport_transform",
@@ -472,6 +543,57 @@ _EDITOR_ACTIONS = [
         },
         capabilities=("read",),
         examples=({"path": "/Game/Blueprints", "class_filter": "Blueprint"},),
+    ),
+    ActionDef(
+        id="editor.get_static_mesh_infos",
+        command="get_static_mesh_infos",
+        tags=("editor", "assets", "static-mesh", "bounds", "size", "read"),
+        description="Return asset-level bounds, footprint, material slot count, and LOD count for one or more StaticMesh assets",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "static_mesh": {
+                    "type": "string",
+                    "description": "Optional single StaticMesh object path",
+                },
+                "static_meshes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of StaticMesh object paths",
+                },
+            },
+        },
+        capabilities=("read",),
+        examples=(
+            {"static_mesh": "/Engine/BasicShapes/Cube.Cube"},
+            {
+                "static_meshes": [
+                    "/Engine/BasicShapes/Cube.Cube",
+                    "/Engine/BasicShapes/Sphere.Sphere",
+                ],
+            },
+        ),
+    ),
+    ActionDef(
+        id="editor.delete_asset",
+        command="delete_asset",
+        tags=("editor", "assets", "delete", "remove", "content-browser"),
+        description="Delete a Content Browser asset by path after closing open asset editors",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "asset_path": {
+                    "type": "string",
+                    "description": "Full asset path to delete (e.g. /Game/Blueprints/BP_Old.BP_Old)",
+                },
+            },
+            "required": ["asset_path"],
+        },
+        capabilities=("destructive",),
+        risk="destructive",
+        examples=(
+            {"asset_path": "/Game/Blueprints/BP_Old.BP_Old"},
+        ),
     ),
     ActionDef(
         id="editor.rename_assets",
@@ -713,6 +835,27 @@ _EDITOR_ACTIONS = [
         examples=(
             {},
             {"force": True},
+        ),
+    ),
+    ActionDef(
+        id="editor.execute_python",
+        command="execute_python",
+        tags=("editor", "python", "execute", "script", "automation", "console"),
+        description=(
+            "Execute arbitrary Python code inside the active Unreal Editor session. "
+            "The unreal module is pre-imported; assign a variable named result to return structured data."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "Python code to execute in the editor"}
+            },
+            "required": ["code"],
+        },
+        risk="destructive",
+        examples=(
+            {"code": "result = 'OK'"},
+            {"code": "unreal.SystemLibrary.execute_console_command(None, 'Puerts.Gen FULL')\nresult = 'Puerts.Gen FULL dispatched'"},
         ),
     ),
     # =========================================================================
@@ -3329,3 +3472,1701 @@ _SELF_EVOLUTION_ACTIONS = [
         ),
     ),
 ]
+
+
+# =========================================================================
+# Niagara
+# =========================================================================
+_NIAGARA_ACTIONS = [
+    ActionDef(
+        id="niagara.create_system",
+        command="create_niagara_system",
+        tags=("niagara", "create", "system"),
+        description="Create a new Niagara System asset.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "asset_path": {"type": "string", "description": "asset_path"},
+                "template": {"type": "string", "description": "template"}
+            },
+            "required": ["asset_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_system_info",
+        command="get_niagara_system_info",
+        tags=("niagara", "get", "system", "info"),
+        description="Get detailed information about a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "include": {"type": "string", "description": "include"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.list_systems",
+        command="list_niagara_systems",
+        tags=("niagara", "list", "systems"),
+        description="List Niagara System assets in the project.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "path"},
+                "name_filter": {"type": "string", "description": "name_filter"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.delete_system",
+        command="delete_niagara_system",
+        tags=("niagara", "delete", "system"),
+        description="Delete a Niagara System asset.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "force": {"type": "boolean", "description": "force"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.compile_system",
+        command="compile_niagara_system",
+        tags=("niagara", "compile", "system"),
+        description="Compile a Niagara System and report any errors.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "wait_for_completion": {"type": "boolean", "description": "wait_for_completion"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_emitters",
+        command="get_niagara_emitters",
+        tags=("niagara", "get", "emitters"),
+        description="Get emitters in a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_emitter",
+        command="add_niagara_emitter",
+        tags=("niagara", "add", "emitter"),
+        description="Add an emitter to a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_path": {"type": "string", "description": "emitter_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "template": {"type": "string", "description": "template"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_emitter",
+        command="remove_niagara_emitter",
+        tags=("niagara", "remove", "emitter"),
+        description="Remove an emitter from a Niagara System by name.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_emitter_property",
+        command="set_niagara_emitter_property",
+        tags=("niagara", "set", "emitter", "property"),
+        description="Set a property on an emitter within a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "property": {"type": "string", "description": "property"},
+                "value": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {"type": "object"},
+                    ],
+                    "description": "value",
+                }
+            },
+            "required": ["system_path", "emitter_name", "property", "value"]
+        },
+    ),
+    ActionDef(
+        id="niagara.duplicate_emitter",
+        command="duplicate_niagara_emitter",
+        tags=("niagara", "duplicate", "emitter"),
+        description="Duplicate an emitter within a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "new_name": {"type": "string", "description": "new_name"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.reorder_emitter",
+        command="reorder_niagara_emitter",
+        tags=("niagara", "reorder", "emitter"),
+        description="Move an emitter to a new position in the system's emitter list.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "new_index": {"type": "integer", "description": "new_index"}
+            },
+            "required": ["system_path", "emitter_name", "new_index"]
+        },
+    ),
+    ActionDef(
+        id="niagara.rename_emitter",
+        command="rename_niagara_emitter",
+        tags=("niagara", "rename", "emitter"),
+        description="Rename an emitter within a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "new_name": {"type": "string", "description": "new_name"}
+            },
+            "required": ["system_path", "emitter_name", "new_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_modules",
+        command="get_niagara_modules",
+        tags=("niagara", "get", "modules"),
+        description="Get modules in an emitter's script usage stack.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "include_inputs": {"type": "boolean", "description": "include_inputs"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_module",
+        command="add_niagara_module",
+        tags=("niagara", "add", "module"),
+        description="Add a module to an emitter's script usage stack.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_path": {"type": "string", "description": "module_path"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "index": {"type": "integer", "description": "index"}
+            },
+            "required": ["system_path", "emitter_name", "module_path", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_module",
+        command="remove_niagara_module",
+        tags=("niagara", "remove", "module"),
+        description="Remove a module from an emitter's script usage stack.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_module_enabled",
+        command="set_niagara_module_enabled",
+        tags=("niagara", "set", "module", "enabled"),
+        description="Enable or disable a module in an emitter's stack.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "enabled": {"type": "boolean", "description": "enabled"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage", "enabled"]
+        },
+    ),
+    ActionDef(
+        id="niagara.reorder_module",
+        command="reorder_niagara_module",
+        tags=("niagara", "reorder", "module"),
+        description="Move a module to a new position within its script usage stack.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "new_index": {"type": "integer", "description": "new_index"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage", "new_index"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_module_inputs",
+        command="get_niagara_module_inputs",
+        tags=("niagara", "get", "module", "inputs"),
+        description="Get all input parameters for a specific module.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "input_filter": {"type": "string", "description": "input_filter"},
+                "include_schema": {"type": "boolean", "description": "include_schema"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_module_input",
+        command="set_niagara_module_input",
+        tags=("niagara", "set", "module", "input"),
+        description="Set a static value on a module input parameter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "value": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {"type": "object"},
+                        {"type": "array"},
+                    ],
+                    "description": "value"
+                },
+                "script_usage": {"type": "string", "description": "script_usage"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "input_name", "value", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_dynamic_input",
+        command="set_niagara_dynamic_input",
+        tags=("niagara", "set", "dynamic", "input"),
+        description="Set a dynamic input (random range, linked parameter, custom expression, or arbitrary script) on a module input.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "dynamic_input_type": {"type": "string", "description": "dynamic_input_type"},
+                "min_value": {"type": "string", "description": "min_value"},
+                "max_value": {"type": "string", "description": "max_value"},
+                "parameter_name": {"type": "string", "description": "parameter_name"},
+                "expression": {"type": "string", "description": "expression"},
+                "dynamic_input_script_path": {"type": "string", "description": "dynamic_input_script_path"},
+                "suggested_name": {"type": "string", "description": "suggested_name"},
+                "pin_defaults": {"type": "object", "description": "pin_defaults"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "input_name", "script_usage", "dynamic_input_type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_curve",
+        command="set_niagara_curve",
+        tags=("niagara", "set", "curve"),
+        description="Set a curve on a module input parameter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "curve_type": {"type": "string", "description": "curve_type"},
+                "keys": {
+                    "type": "array",
+                    "description": "keys",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "time": {"type": "number"},
+                            "value": {},
+                            "arrive_tangent": {"type": "number"},
+                            "leave_tangent": {"type": "number"},
+                            "interp_mode": {"type": "string"},
+                        },
+                        "required": ["time", "value"],
+                    },
+                }
+            },
+            "required": ["system_path", "emitter_name", "module_name", "input_name", "script_usage", "curve_type", "keys"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_user_parameters",
+        command="get_niagara_user_parameters",
+        tags=("niagara", "get", "user", "parameters"),
+        description="Get user-exposed parameters from a Niagara System asset or a level actor's component.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "actor_name": {"type": "string", "description": "actor_name"},
+                "filter": {"type": "string", "description": "filter"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.add_user_parameter",
+        command="add_niagara_user_parameter",
+        tags=("niagara", "add", "user", "parameter"),
+        description="Add a user parameter to a Niagara System. Supports every type the editor's",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "parameter_name": {"type": "string", "description": "parameter_name"},
+                "parameter_type": {"type": "string", "description": "parameter_type"},
+                "default_value": {"type": "string", "description": "default_value"}
+            },
+            "required": ["system_path", "parameter_name", "parameter_type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_user_parameter",
+        command="set_niagara_user_parameter",
+        tags=("niagara", "set", "user", "parameter"),
+        description="Set a user parameter value on a Niagara System asset or level actor instance.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "parameter_name": {"type": "string", "description": "parameter_name"},
+                "parameter_type": {"type": "string", "description": "parameter_type"},
+                "value": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {"type": "object"},
+                        {"type": "array"},
+                    ],
+                    "description": "value",
+                },
+                "actor_name": {"type": "string", "description": "actor_name"},
+                "system_path": {"type": "string", "description": "system_path"}
+            },
+            "required": ["parameter_name", "value"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_user_parameter",
+        command="remove_niagara_user_parameter",
+        tags=("niagara", "remove", "user", "parameter"),
+        description="Remove a user parameter from a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "parameter_name": {"type": "string", "description": "parameter_name"}
+            },
+            "required": ["system_path", "parameter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.link_parameter",
+        command="link_niagara_parameter",
+        tags=("niagara", "link", "parameter"),
+        description="Link a module input to a Niagara parameter (user, system, emitter, or particle scope).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "linked_parameter": {"type": "string", "description": "linked_parameter"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "input_name", "script_usage", "linked_parameter"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_renderer",
+        command="add_niagara_renderer",
+        tags=("niagara", "add", "renderer"),
+        description="Add a renderer to an emitter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "renderer_type": {"type": "string", "description": "renderer_type"},
+                "material_path": {"type": "string", "description": "material_path"},
+                "mesh_path": {"type": "string", "description": "mesh_path"}
+            },
+            "required": ["system_path", "emitter_name", "renderer_type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_renderer",
+        command="remove_niagara_renderer",
+        tags=("niagara", "remove", "renderer"),
+        description="Remove a renderer from an emitter by index.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "renderer_index": {"type": "integer", "description": "renderer_index"}
+            },
+            "required": ["system_path", "emitter_name", "renderer_index"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_renderer_info",
+        command="get_niagara_renderer_info",
+        tags=("niagara", "get", "renderer", "info"),
+        description="Get detailed information about a renderer on an emitter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "renderer_index": {"type": "integer", "description": "renderer_index"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_renderer_property",
+        command="set_niagara_renderer_property",
+        tags=("niagara", "set", "renderer", "property"),
+        description="Set a property on an emitter's renderer.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "property": {"type": "string", "description": "property"},
+                "value": {"type": "string", "description": "value"},
+                "renderer_index": {"type": "integer", "description": "renderer_index"}
+            },
+            "required": ["system_path", "emitter_name", "property", "value"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_renderer_binding",
+        command="set_niagara_renderer_binding",
+        tags=("niagara", "set", "renderer", "binding"),
+        description="Set an attribute binding on an emitter's renderer.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "binding_name": {"type": "string", "description": "binding_name"},
+                "attribute": {"type": "string", "description": "attribute"},
+                "renderer_index": {"type": "integer", "description": "renderer_index"}
+            },
+            "required": ["system_path", "emitter_name", "binding_name", "attribute"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_event_handler",
+        command="add_niagara_event_handler",
+        tags=("niagara", "add", "event", "handler"),
+        description="Add an event handler to an emitter that responds to events from a source emitter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "source_emitter": {"type": "string", "description": "source_emitter"},
+                "event_name": {"type": "string", "description": "event_name"},
+                "execution_mode": {"type": "string", "description": "execution_mode"},
+                "spawn_number": {"type": "integer", "description": "spawn_number"},
+                "max_events_per_frame": {"type": "integer", "description": "max_events_per_frame"}
+            },
+            "required": ["system_path", "emitter_name", "source_emitter", "event_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_simulation_stage",
+        command="add_niagara_simulation_stage",
+        tags=("niagara", "add", "simulation", "stage"),
+        description="Add a simulation stage to an emitter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "stage_name": {"type": "string", "description": "stage_name"},
+                "iteration_source": {"type": "string", "description": "iteration_source"},
+                "num_iterations": {"type": "integer", "description": "num_iterations"}
+            },
+            "required": ["system_path", "emitter_name", "stage_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_event_handlers",
+        command="get_niagara_event_handlers",
+        tags=("niagara", "get", "event", "handlers"),
+        description="Get all event handlers configured on an emitter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.spawn_effect",
+        command="spawn_niagara_effect",
+        tags=("niagara", "spawn", "effect"),
+        description="Spawn a Niagara System as an actor in the level.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "location": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "[x, y, z]",
+                },
+                "rotation": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "[pitch, yaw, roll]",
+                },
+                "scale": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "description": "[x, y, z]",
+                },
+                "name": {"type": "string", "description": "name"},
+                "auto_activate": {"type": "boolean", "description": "auto_activate"},
+                "force_solo": {"type": "boolean", "description": "force_solo"},
+                "warmup_ticks": {"type": "integer", "description": "warmup_ticks"},
+                "warmup_delta_time": {"type": "number", "description": "warmup_delta_time"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.control_effect",
+        command="control_niagara_effect",
+        tags=("niagara", "control", "effect"),
+        description="Control a Niagara effect actor in the level.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "actor_name": {"type": "string", "description": "actor_name"},
+                "action": {"type": "string", "description": "action"}
+            },
+            "required": ["actor_name", "action"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_component",
+        command="add_niagara_component",
+        tags=("niagara", "add", "component"),
+        description="Add a NiagaraComponent to an existing actor in the level.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "actor_name": {"type": "string", "description": "actor_name"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "component_name": {"type": "string", "description": "component_name"},
+                "relative_location": {"type": "string", "description": "relative_location"},
+                "auto_activate": {"type": "boolean", "description": "auto_activate"}
+            },
+            "required": ["actor_name", "system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_actors",
+        command="get_niagara_actors",
+        tags=("niagara", "get", "actors"),
+        description="Get all Niagara actors in the current level.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_filter": {"type": "string", "description": "system_filter"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.list_modules",
+        command="list_niagara_modules",
+        tags=("niagara", "list", "modules"),
+        description="List available Niagara module scripts for use with add_niagara_module.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "description": "category"},
+                "search": {"type": "string", "description": "search"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.list_emitter_templates",
+        command="list_niagara_emitter_templates",
+        tags=("niagara", "list", "emitter", "templates"),
+        description="List available emitter templates for use with add_niagara_emitter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "description": "category"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.list_data_interfaces",
+        command="list_niagara_data_interfaces",
+        tags=("niagara", "list", "data", "interfaces"),
+        description="List available Niagara Data Interfaces (Grid2D, Grid3D, AudioSpectrum, etc.).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "filter": {"type": "string", "description": "filter"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.list_parameter_types",
+        command="list_niagara_parameter_types",
+        tags=("niagara", "list", "parameter", "types"),
+        description="Live query of FNiagaraTypeRegistry — every type the editor's User Parameters",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scope": {"type": "string", "description": "scope"},
+                "kind": {"type": "string", "description": "kind"},
+                "filter": {"type": "string", "description": "filter"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.get_emitter_attributes",
+        command="get_niagara_emitter_attributes",
+        tags=("niagara", "get", "emitter", "attributes"),
+        description="Get attributes defined on an emitter at a given scope.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "scope": {"type": "string", "description": "scope"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_rapid_iteration_parameters",
+        command="get_niagara_rapid_iteration_parameters",
+        tags=("niagara", "get", "rapid", "iteration", "parameters"),
+        description="Get rapid iteration parameters (the actual configurable values on modules).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_rapid_iteration_parameter",
+        command="set_niagara_rapid_iteration_parameter",
+        tags=("niagara", "set", "rapid", "iteration", "parameter"),
+        description="Set a rapid iteration parameter value on a module.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "value": {"type": "string", "description": "value"},
+                "script_usage": {"type": "string", "description": "script_usage"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "input_name", "value", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_renderer_properties",
+        command="get_niagara_renderer_properties",
+        tags=("niagara", "get", "renderer", "properties"),
+        description="Get editable properties of a renderer with current values and valid enum values.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "renderer_index": {"type": "integer", "description": "renderer_index"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_system_property",
+        command="set_niagara_system_property",
+        tags=("niagara", "set", "system", "property"),
+        description="Set a system-level property on a Niagara System via reflection.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "property": {"type": "string", "description": "property"},
+                "value": {"type": "string", "description": "value"}
+            },
+            "required": ["system_path", "property", "value"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_system_errors",
+        command="get_niagara_system_errors",
+        tags=("niagara", "get", "system", "errors"),
+        description="Get compilation errors, warnings, and validation issues for a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "severity": {"type": "string", "description": "severity"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_particle_stats",
+        command="get_niagara_particle_stats",
+        tags=("niagara", "get", "particle", "stats"),
+        description="Get live particle counts and emitter execution state from a running Niagara instance or preview.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "actor_name": {"type": "string", "description": "actor_name"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_playback_range",
+        command="set_niagara_playback_range",
+        tags=("niagara", "set", "playback", "range"),
+        description="Set the timeline playback range in the Niagara editor.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "range_end": {"type": "number", "description": "range_end"},
+                "range_start": {"type": "number", "description": "range_start"},
+                "frame_rate": {"type": "integer", "description": "frame_rate"}
+            },
+            "required": ["system_path", "range_end"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_playback_range",
+        command="get_niagara_playback_range",
+        tags=("niagara", "get", "playback", "range"),
+        description="Get the current timeline playback range and frame rate settings.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_module_versions",
+        command="get_niagara_module_versions",
+        tags=("niagara", "get", "module", "versions"),
+        description="Check for outdated modules in an emitter and their available versions.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "filter": {"type": "string", "description": "filter"}
+            },
+            "required": ["system_path", "emitter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.upgrade_module_version",
+        command="upgrade_niagara_module_version",
+        tags=("niagara", "upgrade", "module", "version"),
+        description="Upgrade a versioned Niagara module in an emitter stack to the latest or a specified version.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "target_version": {"type": "string", "description": "target_version"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.create_scratch_pad_module",
+        command="create_niagara_scratch_pad_module",
+        tags=("niagara", "create", "scratch", "pad", "module"),
+        description="Create a new scratch pad script on a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "module_type": {"type": "string", "description": "module_type"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.duplicate_scratch_pad_module",
+        command="duplicate_niagara_scratch_pad_module",
+        tags=("niagara", "duplicate", "scratch", "pad", "module"),
+        description="Duplicate an existing scratch pad module on a system.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "new_name": {"type": "string", "description": "new_name"}
+            },
+            "required": ["system_path", "module_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.delete_scratch_pad_module",
+        command="delete_niagara_scratch_pad_module",
+        tags=("niagara", "delete", "scratch", "pad", "module"),
+        description="Delete a scratch pad module from a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"}
+            },
+            "required": ["system_path", "module_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.rename_scratch_pad_module",
+        command="rename_niagara_scratch_pad_module",
+        tags=("niagara", "rename", "scratch", "pad", "module"),
+        description="Rename a scratch pad module on a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "new_name": {"type": "string", "description": "new_name"}
+            },
+            "required": ["system_path", "module_name", "new_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_graph_nodes",
+        command="get_niagara_graph_nodes",
+        tags=("niagara", "get", "graph", "nodes"),
+        description="Introspect every node inside a Niagara graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "verbosity": {"type": "string", "description": "verbosity"},
+                "type_filter": {"type": "string", "description": "type_filter"},
+                "name_filter": {"type": "string", "description": "name_filter"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.get_node_info",
+        command="get_niagara_node_info",
+        tags=("niagara", "get", "node", "info"),
+        description="Deep inspect a single Niagara node: full pin layout, connections, type-specific detail.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_class": {"type": "string", "description": "node_class"},
+                "node_id": {"type": "string", "description": "node_id"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.trace_connection",
+        command="trace_niagara_connection",
+        tags=("niagara", "trace", "connection"),
+        description="Breadth-first trace of connections from a starting node through the graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_class": {"type": "string", "description": "node_class"},
+                "node_id": {"type": "string", "description": "node_id"},
+                "direction": {"type": "string", "description": "direction"},
+                "max_depth": {"type": "integer", "description": "max_depth"},
+                "pin_name": {"type": "string", "description": "pin_name"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.validate_graph",
+        command="validate_niagara_graph",
+        tags=("niagara", "validate", "graph"),
+        description="Classify orphaned, dead-end, and missing-input nodes in a Niagara graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.list_scratch_pad_modules",
+        command="list_niagara_scratch_pad_modules",
+        tags=("niagara", "list", "scratch", "pad", "modules"),
+        description="List all scratch pad modules on a Niagara System.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"}
+            },
+            "required": ["system_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.apply_scratch_pad",
+        command="apply_niagara_scratch_pad",
+        tags=("niagara", "apply", "scratch", "pad"),
+        description="Commit a scratch pad module's edit-copy to the original script (Apply button).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"}
+            },
+            "required": ["system_path", "module_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.apply_and_save_scratch_pad",
+        command="apply_and_save_niagara_scratch_pad",
+        tags=("niagara", "apply", "and", "save", "scratch", "pad"),
+        description="Apply a scratch pad module's edit-copy AND save the asset (Apply & Save button).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"}
+            },
+            "required": ["system_path", "module_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_script_properties",
+        command="get_niagara_script_properties",
+        tags=("niagara", "get", "script", "properties"),
+        description="Read the details-panel properties of a Niagara script.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.set_script_properties",
+        command="set_niagara_script_properties",
+        tags=("niagara", "set", "script", "properties"),
+        description="Batch-set details-panel properties on a Niagara script.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "properties": {"type": "object", "description": "properties"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            },
+            "required": ["properties"]
+        },
+    ),
+    ActionDef(
+        id="niagara.list_script_parameters",
+        command="list_niagara_script_parameters",
+        tags=("niagara", "list", "script", "parameters"),
+        description="List input + output parameters of a Niagara script.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.add_script_parameter",
+        command="add_niagara_script_parameter",
+        tags=("niagara", "add", "script", "parameter"),
+        description="Add an input or output parameter to a Niagara script.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "name"},
+                "type": {"type": "string", "description": "type"},
+                "direction": {"type": "string", "description": "direction"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            },
+            "required": ["name", "type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_script_parameter",
+        command="remove_niagara_script_parameter",
+        tags=("niagara", "remove", "script", "parameter"),
+        description="Remove a named input or output parameter from a Niagara script.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "name"},
+                "direction": {"type": "string", "description": "direction"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            },
+            "required": ["name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.rename_script_parameter",
+        command="rename_niagara_script_parameter",
+        tags=("niagara", "rename", "script", "parameter"),
+        description="Rename a script parameter in-place across both asset and edit-copy graphs.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "old_name": {"type": "string", "description": "old_name"},
+                "new_name": {"type": "string", "description": "new_name"},
+                "direction": {"type": "string", "description": "direction"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"}
+            },
+            "required": ["old_name", "new_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_graph_node",
+        command="add_niagara_graph_node",
+        tags=("niagara", "add", "graph", "node"),
+        description="Create a new supported node inside a Niagara scratch-pad / dynamic-input / module graph, including CustomHlsl.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "node_type": {"type": "string", "description": "node_type"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"},
+                "pos_x": {"type": "integer", "description": "pos_x"},
+                "pos_y": {"type": "integer", "description": "pos_y"},
+                "op_name": {"type": "string", "description": "op_name"},
+                "function_script": {"type": "string", "description": "function_script"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "input_type": {"type": "string", "description": "input_type"},
+                "di_class": {"type": "string", "description": "di_class"},
+                "function_name": {"type": "string", "description": "function_name"},
+                "hlsl_code": {"type": "string", "description": "hlsl_code"},
+                "inputs": {
+                    "type": "array",
+                    "description": "inputs",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "type": {"type": "string"},
+                        },
+                        "required": ["name"],
+                    },
+                },
+                "outputs": {
+                    "type": "array",
+                    "description": "outputs",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "type": {"type": "string"},
+                        },
+                        "required": ["name"],
+                    },
+                },
+            },
+            "required": ["node_type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.list_data_interface_functions",
+        command="list_niagara_data_interface_functions",
+        tags=("niagara", "list", "data", "interface", "functions"),
+        description="Enumerate member functions on a Niagara data interface class.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "di_class": {"type": "string", "description": "di_class"},
+                "filter": {"type": "string", "description": "filter"},
+                "include_pins": {"type": "boolean", "description": "include_pins"}
+            },
+            "required": ["di_class"]
+        },
+    ),
+    ActionDef(
+        id="niagara.delete_graph_node",
+        command="delete_niagara_graph_node",
+        tags=("niagara", "delete", "graph", "node"),
+        description="Delete a node from a Niagara graph (asset + edit-copy).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_path": {"type": "string", "description": "script_path"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_id": {"type": "string", "description": "node_id"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.list_ops",
+        command="list_niagara_ops",
+        tags=("niagara", "list", "ops"),
+        description="Enumerate all valid UNiagaraNodeOp operations from FNiagaraOpInfo registry.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "filter": {"type": "string", "description": "filter"},
+                "category": {"type": "string", "description": "category"},
+                "exact_name": {"type": "string", "description": "exact_name"},
+                "include_pins": {"type": "boolean", "description": "include_pins"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.get_module_input_binding",
+        command="get_niagara_module_input_binding",
+        tags=("niagara", "get", "module", "input", "binding"),
+        description="Resolve the actual binding of each module input — Default/Local/Linked/Dynamic/Data.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "input_filter": {"type": "string", "description": "input_filter"},
+                "max_depth": {"type": "integer", "description": "max_depth"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage"]
+        },
+    ),
+    ActionDef(
+        id="niagara.clear_module_input",
+        command="clear_niagara_module_input",
+        tags=("niagara", "clear", "module", "input"),
+        description="Reset a module input to its default — equivalent to \"Reset to Default\" in the stack UI.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "input_name": {"type": "string", "description": "input_name"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage", "input_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.list_input_source_menu",
+        command="list_niagara_input_source_menu",
+        tags=("niagara", "list", "input", "source", "menu"),
+        description="Reproduce the stack-UI source dropdown for a specific input.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "emitter_name": {"type": "string", "description": "emitter_name"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "script_usage": {"type": "string", "description": "script_usage"},
+                "input_name": {"type": "string", "description": "input_name"},
+                "name_filter": {"type": "string", "description": "name_filter"}
+            },
+            "required": ["system_path", "emitter_name", "module_name", "script_usage", "input_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.find_scratch_pad_usage",
+        command="find_niagara_scratch_pad_usage",
+        tags=("niagara", "find", "scratch", "pad", "usage"),
+        description="Reverse lookup: find where a scratch pad script is referenced in the stack.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"}
+            },
+            "required": ["system_path", "module_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.resolve_built_in_dynamic_input",
+        command="resolve_niagara_built_in_dynamic_input",
+        tags=("niagara", "resolve", "built", "in", "dynamic", "input"),
+        description="Discover built-in dynamic-input script asset paths via AssetRegistry.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name_filter": {"type": "string", "description": "name_filter"},
+                "exact_name": {"type": "string", "description": "exact_name"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.create_module_asset",
+        command="create_niagara_module_asset",
+        tags=("niagara", "create", "module", "asset"),
+        description="Create a standalone Niagara script asset (module / dynamic input / function).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "asset_path": {"type": "string", "description": "asset_path"},
+                "module_type": {"type": "string", "description": "module_type"},
+                "description": {"type": "string", "description": "description"}
+            },
+            "required": ["asset_path"]
+        },
+    ),
+    ActionDef(
+        id="niagara.set_scratch_pad_hlsl",
+        command="set_niagara_scratch_pad_hlsl",
+        tags=("niagara", "set", "scratch", "pad", "hlsl"),
+        description="Set HLSL source on a scratch pad module's Custom HLSL node, creating pins as needed.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "hlsl_code": {"type": "string", "description": "hlsl_code"},
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "type": {"type": "string"},
+                        },
+                        "required": ["name"],
+                    },
+                    "description": "inputs",
+                },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "type": {"type": "string"},
+                        },
+                        "required": ["name"],
+                    },
+                    "description": "outputs",
+                },
+                "clear_existing_pins": {"type": "boolean", "description": "clear_existing_pins"}
+            },
+            "required": ["system_path", "module_name", "hlsl_code"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_custom_hlsl_input",
+        command="add_niagara_custom_hlsl_input",
+        tags=("niagara", "add", "custom", "hlsl", "input"),
+        description="Add a typed input pin to a scratch pad module's Custom HLSL node.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "pin_name": {"type": "string", "description": "pin_name"},
+                "pin_type": {"type": "string", "description": "pin_type"}
+            },
+            "required": ["system_path", "module_name", "pin_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_custom_hlsl_output",
+        command="add_niagara_custom_hlsl_output",
+        tags=("niagara", "add", "custom", "hlsl", "output"),
+        description="Add a typed output pin to a scratch pad module's Custom HLSL node.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "pin_name": {"type": "string", "description": "pin_name"},
+                "pin_type": {"type": "string", "description": "pin_type"}
+            },
+            "required": ["system_path", "module_name", "pin_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.rename_custom_hlsl_pin",
+        command="rename_niagara_custom_hlsl_pin",
+        tags=("niagara", "rename", "custom", "hlsl", "pin"),
+        description="Rename a Custom HLSL pin and update references inside the HLSL source.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "old_name": {"type": "string", "description": "old_name"},
+                "new_name": {"type": "string", "description": "new_name"}
+            },
+            "required": ["system_path", "module_name", "old_name", "new_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_custom_hlsl_pin",
+        command="remove_niagara_custom_hlsl_pin",
+        tags=("niagara", "remove", "custom", "hlsl", "pin"),
+        description="Remove a pin from a Custom HLSL node and rebuild its signature.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "pin_name": {"type": "string", "description": "pin_name"}
+            },
+            "required": ["system_path", "module_name", "pin_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.list_node_types",
+        command="list_niagara_node_types",
+        tags=("niagara", "list", "node", "types"),
+        description="Enumerate every Niagara node type that can be added to a graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "filter": {"type": "string", "description": "filter"},
+                "kind": {"type": "string", "description": "kind"},
+                "include_engine": {"type": "boolean", "description": "include_engine"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.get_node_type_info",
+        command="get_niagara_node_type_info",
+        tags=("niagara", "get", "node", "type", "info"),
+        description="Get pin/property schema for a Niagara node type or script asset.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "description": "type"},
+                "script_path": {"type": "string", "description": "script_path"}
+            },
+            "required": ["type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.search_functions",
+        command="search_niagara_functions",
+        tags=("niagara", "search", "functions"),
+        description="Search Niagara script assets by usage + name filter.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "filter": {"type": "string", "description": "filter"},
+                "usage": {"type": "string", "description": "usage"},
+                "include_engine": {"type": "boolean", "description": "include_engine"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.describe_type",
+        command="describe_niagara_type",
+        tags=("niagara", "describe", "type"),
+        description="Return the full schema of any Niagara type — primitive, enum, struct, or data interface.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "description": "type"}
+            },
+            "required": ["type"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_data_interface_schema",
+        command="get_niagara_data_interface_schema",
+        tags=("niagara", "get", "data", "interface", "schema"),
+        description="Return the full editable-property schema of a UNiagaraDataInterface subclass.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "class_": {"type": "string", "description": "class_"}
+            },
+            "required": ["class_"]
+        },
+    ),
+    ActionDef(
+        id="niagara.get_schema_actions",
+        command="get_niagara_schema_actions",
+        tags=("niagara", "get", "schema", "actions"),
+        description="Return the full graph context-menu actions for a scratch pad module.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "filter": {"type": "string", "description": "filter"},
+                "max_results": {"type": "integer", "description": "max_results"}
+            },
+            "required": ["system_path", "module_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.list_available_parameters",
+        command="list_niagara_available_parameters",
+        tags=("niagara", "list", "available", "parameters"),
+        description="List parameters that can be bound to a Map Get / Map Set pin.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "filter": {"type": "string", "description": "filter"},
+                "namespace": {"type": "string", "description": "namespace"},
+                "max_results": {"type": "integer", "description": "max_results"},
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"}
+            }
+        },
+    ),
+    ActionDef(
+        id="niagara.add_map_get_pin",
+        command="add_niagara_map_get_pin",
+        tags=("niagara", "add", "map", "get", "pin"),
+        description="Add a typed output pin to the first ParameterMapGet node in a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "parameter_name": {"type": "string", "description": "parameter_name"},
+                "parameter_type": {"type": "string", "description": "parameter_type"}
+            },
+            "required": ["system_path", "module_name", "parameter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_map_set_pin",
+        command="add_niagara_map_set_pin",
+        tags=("niagara", "add", "map", "set", "pin"),
+        description="Add a typed input pin to the first ParameterMapSet node in a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "parameter_name": {"type": "string", "description": "parameter_name"},
+                "parameter_type": {"type": "string", "description": "parameter_type"}
+            },
+            "required": ["system_path", "module_name", "parameter_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.add_node_pin",
+        command="add_niagara_node_pin",
+        tags=("niagara", "add", "node", "pin"),
+        description="Generic: add a typed dynamic pin to any node in a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "pin_name": {"type": "string", "description": "pin_name"},
+                "pin_type": {"type": "string", "description": "pin_type"},
+                "direction": {"type": "string", "description": "direction"},
+                "node_class": {"type": "string", "description": "node_class"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_id": {"type": "string", "description": "node_id"}
+            },
+            "required": ["system_path", "module_name", "pin_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.rename_node_pin",
+        command="rename_niagara_node_pin",
+        tags=("niagara", "rename", "node", "pin"),
+        description="Rename a dynamic pin on any node in a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "old_name": {"type": "string", "description": "old_name"},
+                "new_name": {"type": "string", "description": "new_name"},
+                "node_class": {"type": "string", "description": "node_class"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_id": {"type": "string", "description": "node_id"}
+            },
+            "required": ["system_path", "module_name", "old_name", "new_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.remove_node_pin",
+        command="remove_niagara_node_pin",
+        tags=("niagara", "remove", "node", "pin"),
+        description="Remove a dynamic pin from any node in a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "pin_name": {"type": "string", "description": "pin_name"},
+                "node_class": {"type": "string", "description": "node_class"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_id": {"type": "string", "description": "node_id"}
+            },
+            "required": ["system_path", "module_name", "pin_name"]
+        },
+    ),
+    ActionDef(
+        id="niagara.connect_pins",
+        command="connect_niagara_pins",
+        tags=("niagara", "connect", "pins"),
+        description="Wire one node's output pin to another node's input pin inside a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "from_pin": {"type": "string", "description": "from_pin"},
+                "to_pin": {"type": "string", "description": "to_pin"},
+                "from_node_class": {"type": "string", "description": "from_node_class"},
+                "from_node_index": {"type": "integer", "description": "from_node_index"},
+                "from_node_id": {"type": "string", "description": "from_node_id"},
+                "to_node_class": {"type": "string", "description": "to_node_class"},
+                "to_node_index": {"type": "integer", "description": "to_node_index"},
+                "to_node_id": {"type": "string", "description": "to_node_id"}
+            },
+            "required": ["system_path", "module_name", "from_pin", "to_pin"]
+        },
+    ),
+    ActionDef(
+        id="niagara.disconnect_pins",
+        command="disconnect_niagara_pins",
+        tags=("niagara", "disconnect", "pins"),
+        description="Break all connections on a specific pin of a node in a scratch pad graph.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "system_path": {"type": "string", "description": "system_path"},
+                "module_name": {"type": "string", "description": "module_name"},
+                "pin_name": {"type": "string", "description": "pin_name"},
+                "node_class": {"type": "string", "description": "node_class"},
+                "node_index": {"type": "integer", "description": "node_index"},
+                "node_id": {"type": "string", "description": "node_id"}
+            },
+            "required": ["system_path", "module_name", "pin_name"]
+        },
+    ),
+]
+

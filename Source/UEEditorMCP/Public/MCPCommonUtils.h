@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -14,6 +12,7 @@ class UEdGraph;
 class UEdGraphNode;
 class UEdGraphPin;
 class AActor;
+class UPackage;
 class UK2Node_Event;
 class UK2Node_CallFunction;
 class UK2Node_VariableGet;
@@ -21,6 +20,7 @@ class UK2Node_VariableSet;
 class UK2Node_Self;
 class UK2Node_InputAction;
 class USCS_Node;
+class UFactory;
 
 /**
  * Common utility functions for MCP commands.
@@ -93,6 +93,30 @@ public:
 
 	/** Create an error response JSON object */
 	static TSharedPtr<FJsonObject> CreateErrorResponse(const FString& ErrorMessage);
+
+	/** Resolve the primary save root object for a package. */
+	static UObject* FindPrimaryAssetInPackage(UPackage* Package);
+
+	/** Save a package headlessly without routing failures through fatal editor dialogs. */
+	static bool SavePackageSafely(UPackage* Package, UObject* AssetToSave, FString* OutErrorMessage = nullptr);
+
+	// =========================================================================
+	// Asset Utilities
+	// =========================================================================
+
+	/** Split a long object path such as /Game/Folder/Asset into package path and asset name. */
+	static bool TrySplitAssetPath(const FString& AssetPath, FString& OutPackagePath, FString& OutAssetName, FString& OutErrorMessage);
+
+	/** Create an editor asset through AssetTools and return the created object. */
+	static UObject* CreateEditorAsset(const FString& AssetPath, UClass* AssetClass, UFactory* Factory,
+		FString& OutPackagePath, FString& OutAssetName, FString& OutErrorMessage);
+
+	/** Duplicate an existing editor asset to a long object path. */
+	static UObject* DuplicateEditorAsset(UObject* SourceAsset, const FString& AssetPath,
+		FString& OutPackagePath, FString& OutAssetName, FString& OutErrorMessage);
+
+	/** Close open editors for an asset and delete it through EditorAssetLibrary. */
+	static bool DeleteEditorAsset(UObject* Asset, FString& OutCanonicalPath, FString& OutErrorMessage);
 
 	// =========================================================================
 	// Actor Utilities

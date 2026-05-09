@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -54,6 +52,21 @@ protected:
 
 private:
 	UClass* ResolveActorClass(const FString& TypeName) const;
+};
+
+
+/**
+ * FSpawnStaticMeshActorAction
+ * Spawns a StaticMeshActor, assigns a StaticMesh asset, and returns transform/bounds.
+ */
+class UEEDITORMCP_API FSpawnStaticMeshActorAction : public FEditorAction
+{
+public:
+	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
+
+protected:
+	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
+	virtual FString GetActionName() const override { return TEXT("spawn_static_mesh_actor"); }
 };
 
 
@@ -128,6 +141,21 @@ protected:
 
 
 /**
+ * FSetStaticMeshActorMaterialAction
+ * Sets one or more material slots on a StaticMeshActor's StaticMeshComponent.
+ */
+class UEEDITORMCP_API FSetStaticMeshActorMaterialAction : public FEditorAction
+{
+public:
+	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
+
+protected:
+	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
+	virtual FString GetActionName() const override { return TEXT("set_static_mesh_actor_material"); }
+};
+
+
+/**
  * FFocusViewportAction
  * Focuses the viewport on an actor or location.
  */
@@ -139,6 +167,22 @@ public:
 protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
 	virtual FString GetActionName() const override { return TEXT("focus_viewport"); }
+	virtual bool RequiresSave() const override { return false; }
+};
+
+
+/**
+ * FCaptureViewportAction
+ * Captures the active level viewport as a PNG image.
+ */
+class UEEDITORMCP_API FCaptureViewportAction : public FEditorAction
+{
+public:
+	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
+
+protected:
+	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override { return true; }
+	virtual FString GetActionName() const override { return TEXT("capture_viewport"); }
 	virtual bool RequiresSave() const override { return false; }
 };
 
@@ -206,6 +250,37 @@ protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
 	virtual FString GetActionName() const override { return TEXT("list_assets"); }
 	virtual bool RequiresSave() const override { return false; }
+};
+
+/**
+ * FGetStaticMeshInfosAction
+ * Returns asset-level bounds and basic metadata for one or more StaticMesh assets.
+ * Params: static_mesh (string) or static_meshes (string[])
+ */
+class UEEDITORMCP_API FGetStaticMeshInfosAction : public FEditorAction
+{
+public:
+	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
+
+protected:
+	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
+	virtual FString GetActionName() const override { return TEXT("get_static_mesh_infos"); }
+	virtual bool RequiresSave() const override { return false; }
+};
+
+/**
+ * FDeleteAssetAction
+ * Deletes a Content Browser asset by path after closing open asset editors.
+ * Params: asset_path (required)
+ */
+class UEEDITORMCP_API FDeleteAssetAction : public FEditorAction
+{
+public:
+	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
+
+protected:
+	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
+	virtual FString GetActionName() const override { return TEXT("delete_asset"); }
 };
 
 
@@ -394,6 +469,26 @@ public:
 protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override { return true; }
 	virtual FString GetActionName() const override { return TEXT("request_shutdown"); }
+	virtual bool RequiresSave() const override { return false; }
+};
+
+
+/**
+ * FExecutePythonAction
+ * Executes Python code inside the editor through the PythonScriptPlugin.
+ * Params: code (string)
+ *
+ * Command: execute_python
+ * Action ID: editor.execute_python
+ */
+class UEEDITORMCP_API FExecutePythonAction : public FEditorAction
+{
+public:
+	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
+
+protected:
+	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
+	virtual FString GetActionName() const override { return TEXT("execute_python"); }
 	virtual bool RequiresSave() const override { return false; }
 };
 

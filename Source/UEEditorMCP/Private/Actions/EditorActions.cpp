@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/EditorActions.h"
 #include "MCPCommonUtils.h"
 #include "Editor.h"
@@ -8,13 +6,14 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
 #include "Engine/SpotLight.h"
 #include "Camera/CameraActor.h"
 #include "Kismet/GameplayStatics.h"
 #include "FileHelpers.h"
-#include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -45,9 +44,11 @@
 #include "HAL/PlatformMisc.h"
 #include "Misc/DateTime.h"
 #include "PlayInEditorDataTypes.h"
+#include "IPythonScriptPlugin.h"
 #include "Settings/LevelEditorPlaySettings.h"
 #include "EngineUtils.h"
 #include "Selection.h"
+#include "UnrealClient.h"
 
 
 // Helper to find actor by name
@@ -66,6 +67,110 @@ static AActor* FindActorByName(UWorld* World, const FString& ActorName)
 		}
 	}
 	return nullptr;
+}
+
+static TArray<TSharedPtr<FJsonValue>> VectorToJsonArray(const FVector& Vector)
+{
+	TArray<TSharedPtr<FJsonValue>> Array;
+	Array.Add(MakeShared<FJsonValueNumber>(Vector.X));
+	Array.Add(MakeShared<FJsonValueNumber>(Vector.Y));
+	Array.Add(MakeShared<FJsonValueNumber>(Vector.Z));
+	return Array;
+}
+
+static TArray<TSharedPtr<FJsonValue>> Vector2DToJsonArray(double X, double Y)
+{
+	TArray<TSharedPtr<FJsonValue>> Array;
+	Array.Add(MakeShared<FJsonValueNumber>(X));
+	Array.Add(MakeShared<FJsonValueNumber>(Y));
+	return Array;
+}
+
+static TArray<TSharedPtr<FJsonValue>> RotatorToJsonArray(const FRotator& Rotator)
+{
+	TArray<TSharedPtr<FJsonValue>> Array;
+	Array.Add(MakeShared<FJsonValueNumber>(Rotator.Pitch));
+	Array.Add(MakeShared<FJsonValueNumber>(Rotator.Yaw));
+	Array.Add(MakeShared<FJsonValueNumber>(Rotator.Roll));
+	return Array;
+}
+
+static TSharedPtr<FJsonObject> StaticMeshActorToPlacementJson(AStaticMeshActor* Actor)
+{
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	if (!Actor)
+	{
+		return Result;
+	}
+
+	UStaticMeshComponent* MeshComponent = Actor->GetStaticMeshComponent();
+	UStaticMesh* Mesh = MeshComponent ? MeshComponent->GetStaticMesh() : nullptr;
+
+	Result->SetStringField(TEXT("actor_name"), Actor->GetName());
+	Result->SetStringField(TEXT("actor_label"), Actor->GetActorLabel());
+	Result->SetStringField(TEXT("static_mesh"), Mesh ? Mesh->GetPathName() : TEXT(""));
+	Result->SetArrayField(TEXT("location"), VectorToJsonArray(Actor->GetActorLocation()));
+	Result->SetArrayField(TEXT("rotation"), RotatorToJsonArray(Actor->GetActorRotation()));
+	Result->SetArrayField(TEXT("scale"), VectorToJsonArray(Actor->GetActorScale3D()));
+	Result->SetStringField(TEXT("folder_path"), Actor->GetFolderPath().ToString());
+
+	FVector BoundsOrigin;
+	FVector BoundsExtent;
+	Actor->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+	Result->SetArrayField(TEXT("bounds_origin"), VectorToJsonArray(BoundsOrigin));
+	Result->SetArrayField(TEXT("bounds_extent"), VectorToJsonArray(BoundsExtent));
+	Result->SetNumberField(TEXT("bounds_sphere_radius"), BoundsExtent.Size());
+	return Result;
+}
+
+static FString NormalizeObjectPathForLoad(const FString& RawPath)
+{
+	FString Path = RawPath;
+	Path.TrimStartAndEndInline();
+	if (!Path.IsEmpty() && Path.StartsWith(TEXT("/")) && !Path.Contains(TEXT(".")))
+	{
+		FString PackagePath;
+		FString AssetName;
+		if (Path.Split(TEXT("/"), &PackagePath, &AssetName, ESearchCase::CaseSensitive, ESearchDir::FromEnd) && !AssetName.IsEmpty())
+		{
+			Path = FString::Printf(TEXT("%s/%s.%s"), *PackagePath, *AssetName, *AssetName);
+		}
+	}
+	return Path;
+}
+
+static TSharedPtr<FJsonObject> StaticMeshToInfoJson(const FString& RequestedPath)
+{
+	const FString NormalizedPath = NormalizeObjectPathForLoad(RequestedPath);
+	UStaticMesh* StaticMesh = LoadObject<UStaticMesh>(nullptr, *NormalizedPath);
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetStringField(TEXT("requested_path"), RequestedPath);
+	Result->SetStringField(TEXT("normalized_path"), NormalizedPath);
+
+	if (!StaticMesh)
+	{
+		Result->SetBoolField(TEXT("success"), false);
+		Result->SetStringField(TEXT("error"), FString::Printf(TEXT("Failed to load static mesh: %s"), *NormalizedPath));
+		Result->SetStringField(TEXT("code"), TEXT("mesh_not_found"));
+		return Result;
+	}
+
+	const FBoxSphereBounds Bounds = StaticMesh->GetBounds();
+	const FVector Size = Bounds.BoxExtent * 2.0;
+
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("asset_name"), StaticMesh->GetName());
+	Result->SetStringField(TEXT("static_mesh"), StaticMesh->GetPathName());
+	Result->SetArrayField(TEXT("bounds_origin"), VectorToJsonArray(Bounds.Origin));
+	Result->SetArrayField(TEXT("bounds_extent"), VectorToJsonArray(Bounds.BoxExtent));
+	Result->SetArrayField(TEXT("bounds_size"), VectorToJsonArray(Size));
+	Result->SetNumberField(TEXT("sphere_radius"), Bounds.SphereRadius);
+	Result->SetArrayField(TEXT("approx_footprint"), Vector2DToJsonArray(Size.X, Size.Y));
+	Result->SetArrayField(TEXT("pivot_offset_from_bounds_center"), VectorToJsonArray(-Bounds.Origin));
+	Result->SetNumberField(TEXT("material_slot_count"), StaticMesh->GetStaticMaterials().Num());
+	Result->SetNumberField(TEXT("lod_count"), StaticMesh->GetNumLODs());
+	return Result;
 }
 
 
@@ -217,6 +322,111 @@ UClass* FSpawnActorAction::ResolveActorClass(const FString& TypeName) const
 	if (TypeName == TEXT("CameraActor")) return ACameraActor::StaticClass();
 	if (TypeName == TEXT("Actor")) return AActor::StaticClass();
 	return nullptr;
+}
+
+
+// ============================================================================
+// FSpawnStaticMeshActorAction
+// ============================================================================
+
+bool FSpawnStaticMeshActorAction::Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError)
+{
+	FString Name, StaticMeshPath;
+	if (!GetRequiredString(Params, TEXT("name"), Name, OutError)) return false;
+	if (!GetRequiredString(Params, TEXT("static_mesh"), StaticMeshPath, OutError)) return false;
+	return true;
+}
+
+TSharedPtr<FJsonObject> FSpawnStaticMeshActorAction::ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context)
+{
+	FString RequestedName, StaticMeshPath, Error;
+	GetRequiredString(Params, TEXT("name"), RequestedName, Error);
+	GetRequiredString(Params, TEXT("static_mesh"), StaticMeshPath, Error);
+	StaticMeshPath = NormalizeObjectPathForLoad(StaticMeshPath);
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return CreateErrorResponse(TEXT("No editor world available"), TEXT("no_world"));
+	}
+
+	UStaticMesh* StaticMesh = LoadObject<UStaticMesh>(nullptr, *StaticMeshPath);
+	if (!StaticMesh)
+	{
+		return CreateErrorResponse(
+			FString::Printf(TEXT("Failed to load static mesh: %s"), *StaticMeshPath),
+			TEXT("mesh_not_found")
+		);
+	}
+
+	FVector Location = FMCPCommonUtils::GetVectorFromJson(Params, TEXT("location"));
+	FRotator Rotation = FMCPCommonUtils::GetRotatorFromJson(Params, TEXT("rotation"));
+	FVector Scale = Params->HasField(TEXT("scale"))
+		? FMCPCommonUtils::GetVectorFromJson(Params, TEXT("scale"))
+		: FVector(1, 1, 1);
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Name = FName(*RequestedName);
+	SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+
+	AStaticMeshActor* NewActor = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), Location, Rotation, SpawnParams);
+	if (!NewActor)
+	{
+		return CreateErrorResponse(TEXT("Failed to spawn static mesh actor"), TEXT("spawn_failed"));
+	}
+
+	NewActor->Modify();
+	NewActor->SetActorScale3D(Scale);
+	NewActor->SetActorLabel(*RequestedName);
+
+	UStaticMeshComponent* MeshComponent = NewActor->GetStaticMeshComponent();
+	if (!MeshComponent)
+	{
+		World->EditorDestroyActor(NewActor, true);
+		return CreateErrorResponse(TEXT("Spawned actor has no StaticMeshComponent"), TEXT("missing_static_mesh_component"));
+	}
+
+	MeshComponent->Modify();
+	MeshComponent->SetStaticMesh(StaticMesh);
+	MeshComponent->MarkRenderStateDirty();
+
+	FString FolderPath = GetOptionalString(Params, TEXT("folder_path"));
+	if (!FolderPath.IsEmpty())
+	{
+		NewActor->SetFolderPath(FName(*FolderPath));
+	}
+
+	const bool bSelect = GetOptionalBool(Params, TEXT("select"), true);
+	if (bSelect && GEditor)
+	{
+		GEditor->SelectNone(false, true, false);
+		GEditor->SelectActor(NewActor, true, true, true);
+	}
+
+	const bool bFocus = GetOptionalBool(Params, TEXT("focus"), false);
+	if (bFocus && GEditor && GEditor->GetActiveViewport())
+	{
+		if (FLevelEditorViewportClient* ViewportClient = static_cast<FLevelEditorViewportClient*>(GEditor->GetActiveViewport()->GetClient()))
+		{
+			ViewportClient->SetViewLocation(NewActor->GetActorLocation() - FVector(1000.0, 0.0, 0.0));
+			ViewportClient->Invalidate();
+		}
+	}
+	else if (GEditor && GEditor->GetActiveViewport())
+	{
+		GEditor->GetActiveViewport()->Invalidate();
+	}
+
+	Context.LastCreatedActorName = NewActor->GetName();
+	Context.MarkPackageDirty(World->GetOutermost());
+
+	TSharedPtr<FJsonObject> Result = StaticMeshActorToPlacementJson(NewActor);
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("requested_name"), RequestedName);
+	Result->SetBoolField(TEXT("name_changed"), NewActor->GetName() != RequestedName);
+
+	UE_LOG(LogMCP, Log, TEXT("UEEditorMCP: Spawned StaticMeshActor '%s' with mesh '%s'"), *NewActor->GetName(), *StaticMeshPath);
+	return CreateSuccessResponse(Result);
 }
 
 
@@ -774,6 +984,150 @@ TSharedPtr<FJsonObject> FSetActorPropertyAction::ExecuteInternal(const TSharedPt
 
 
 // ============================================================================
+// FSetStaticMeshActorMaterialAction
+// ============================================================================
+
+bool FSetStaticMeshActorMaterialAction::Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError)
+{
+	FString ActorName;
+	if (!GetRequiredString(Params, TEXT("actor_name"), ActorName, OutError)) return false;
+
+	const bool bHasSingle = Params->HasField(TEXT("material"));
+	const bool bHasBatch = Params->HasField(TEXT("materials"));
+	if (!bHasSingle && !bHasBatch)
+	{
+		OutError = TEXT("Either 'material' or 'materials' must be provided");
+		return false;
+	}
+	return true;
+}
+
+TSharedPtr<FJsonObject> FSetStaticMeshActorMaterialAction::ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context)
+{
+	FString ActorName, Error;
+	GetRequiredString(Params, TEXT("actor_name"), ActorName, Error);
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return CreateErrorResponse(TEXT("No editor world available"), TEXT("no_world"));
+	}
+
+	AActor* Actor = FindActorByName(World, ActorName);
+	AStaticMeshActor* StaticMeshActor = Cast<AStaticMeshActor>(Actor);
+	if (!StaticMeshActor)
+	{
+		return CreateErrorResponse(
+			FString::Printf(TEXT("StaticMeshActor not found: %s"), *ActorName),
+			TEXT("not_static_mesh_actor")
+		);
+	}
+
+	UStaticMeshComponent* MeshComponent = StaticMeshActor->GetStaticMeshComponent();
+	if (!MeshComponent)
+	{
+		return CreateErrorResponse(TEXT("StaticMeshActor has no StaticMeshComponent"), TEXT("missing_static_mesh_component"));
+	}
+
+	struct FMaterialAssignment
+	{
+		int32 SlotIndex = 0;
+		FString MaterialPath;
+	};
+
+	TArray<FMaterialAssignment> Assignments;
+	if (Params->HasField(TEXT("material")))
+	{
+		FMaterialAssignment Assignment;
+		Assignment.SlotIndex = Params->HasField(TEXT("slot_index"))
+			? static_cast<int32>(Params->GetNumberField(TEXT("slot_index")))
+			: 0;
+		Assignment.MaterialPath = NormalizeObjectPathForLoad(Params->GetStringField(TEXT("material")));
+		Assignments.Add(Assignment);
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* BatchValues = nullptr;
+	if (Params->TryGetArrayField(TEXT("materials"), BatchValues) && BatchValues)
+	{
+		for (const TSharedPtr<FJsonValue>& Value : *BatchValues)
+		{
+			const TSharedPtr<FJsonObject>* Item = nullptr;
+			if (!Value.IsValid() || !Value->TryGetObject(Item) || !Item || !Item->IsValid())
+			{
+				continue;
+			}
+
+			FString MaterialPath;
+			if (!(*Item)->TryGetStringField(TEXT("material"), MaterialPath))
+			{
+				continue;
+			}
+
+			FMaterialAssignment Assignment;
+			Assignment.SlotIndex = (*Item)->HasField(TEXT("slot_index"))
+				? static_cast<int32>((*Item)->GetNumberField(TEXT("slot_index")))
+				: 0;
+			Assignment.MaterialPath = NormalizeObjectPathForLoad(MaterialPath);
+			Assignments.Add(Assignment);
+		}
+	}
+
+	if (Assignments.IsEmpty())
+	{
+		return CreateErrorResponse(TEXT("No valid material assignments were provided"), TEXT("invalid_materials"));
+	}
+
+	StaticMeshActor->Modify();
+	MeshComponent->Modify();
+
+	TArray<TSharedPtr<FJsonValue>> ChangedSlots;
+	const int32 SlotCount = MeshComponent->GetNumMaterials();
+
+	for (const FMaterialAssignment& Assignment : Assignments)
+	{
+		if (Assignment.SlotIndex < 0)
+		{
+			return CreateErrorResponse(TEXT("slot_index must be non-negative"), TEXT("invalid_slot_index"));
+		}
+
+		UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *Assignment.MaterialPath);
+		if (!Material)
+		{
+			return CreateErrorResponse(
+				FString::Printf(TEXT("Failed to load material: %s"), *Assignment.MaterialPath),
+				TEXT("material_not_found")
+			);
+		}
+
+		UMaterialInterface* OldMaterial = MeshComponent->GetMaterial(Assignment.SlotIndex);
+		MeshComponent->SetMaterial(Assignment.SlotIndex, Material);
+
+		TSharedPtr<FJsonObject> SlotResult = MakeShared<FJsonObject>();
+		SlotResult->SetNumberField(TEXT("slot_index"), Assignment.SlotIndex);
+		SlotResult->SetStringField(TEXT("old_material"), OldMaterial ? OldMaterial->GetPathName() : TEXT(""));
+		SlotResult->SetStringField(TEXT("new_material"), Material->GetPathName());
+		ChangedSlots.Add(MakeShared<FJsonValueObject>(SlotResult));
+	}
+
+	MeshComponent->MarkRenderStateDirty();
+	if (GEditor && GEditor->GetActiveViewport())
+	{
+		GEditor->GetActiveViewport()->Invalidate();
+	}
+
+	Context.MarkPackageDirty(World->GetOutermost());
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("actor_name"), StaticMeshActor->GetName());
+	Result->SetStringField(TEXT("actor_label"), StaticMeshActor->GetActorLabel());
+	Result->SetNumberField(TEXT("slot_count"), SlotCount);
+	Result->SetArrayField(TEXT("changed_slots"), ChangedSlots);
+	return CreateSuccessResponse(Result);
+}
+
+
+// ============================================================================
 // FFocusViewportAction
 // ============================================================================
 
@@ -837,6 +1191,71 @@ TSharedPtr<FJsonObject> FFocusViewportAction::ExecuteInternal(const TSharedPtr<F
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetBoolField(TEXT("success"), true);
+	return CreateSuccessResponse(Result);
+}
+
+
+// ============================================================================
+// FCaptureViewportAction
+// ============================================================================
+
+TSharedPtr<FJsonObject> FCaptureViewportAction::ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context)
+{
+	FViewport* ActiveViewport = GEditor ? GEditor->GetActiveViewport() : nullptr;
+	FLevelEditorViewportClient* ViewportClient = nullptr;
+	if (ActiveViewport)
+	{
+		ViewportClient = static_cast<FLevelEditorViewportClient*>(ActiveViewport->GetClient());
+	}
+
+	if (!ActiveViewport || !ViewportClient)
+	{
+		return CreateErrorResponse(TEXT("Failed to get active viewport"), TEXT("no_viewport"));
+	}
+
+	const int32 Width = ActiveViewport->GetSizeXY().X;
+	const int32 Height = ActiveViewport->GetSizeXY().Y;
+	if (Width <= 0 || Height <= 0)
+	{
+		return CreateErrorResponse(TEXT("Active viewport has invalid dimensions"), TEXT("invalid_viewport_size"));
+	}
+
+	ViewportClient->Invalidate();
+	ActiveViewport->Draw();
+
+	TArray<FColor> Pixels;
+	if (!ActiveViewport->ReadPixels(Pixels) || Pixels.Num() < Width * Height)
+	{
+		return CreateErrorResponse(TEXT("Failed to read pixels from active viewport"), TEXT("read_pixels_failed"));
+	}
+
+	for (FColor& Pixel : Pixels)
+	{
+		Pixel.A = 255;
+	}
+
+	TArray<uint8> CompressedPngBytes;
+	FImageUtils::ThumbnailCompressImageArray(Width, Height, Pixels, CompressedPngBytes);
+	if (CompressedPngBytes.IsEmpty())
+	{
+		return CreateErrorResponse(TEXT("Failed to compress viewport capture to PNG"), TEXT("png_compress_failed"));
+	}
+
+	const FVector CameraLocation = ViewportClient->GetViewLocation();
+	const FRotator CameraRotation = ViewportClient->GetViewRotation();
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("mime_type"), TEXT("image/png"));
+	Result->SetStringField(TEXT("image_format"), TEXT("png"));
+	Result->SetNumberField(TEXT("width"), Width);
+	Result->SetNumberField(TEXT("height"), Height);
+	Result->SetNumberField(TEXT("image_byte_size"), CompressedPngBytes.Num());
+	Result->SetStringField(TEXT("image_base64"), FBase64::Encode(CompressedPngBytes));
+	Result->SetArrayField(TEXT("camera_location"), VectorToJsonArray(CameraLocation));
+	Result->SetArrayField(TEXT("camera_rotation"), RotatorToJsonArray(CameraRotation));
+	Result->SetBoolField(TEXT("include_ui"), false);
+	Result->SetStringField(TEXT("mode"), TEXT("active_level_viewport"));
 	return CreateSuccessResponse(Result);
 }
 
@@ -948,7 +1367,21 @@ TSharedPtr<FJsonObject> FSaveAllAction::ExecuteInternal(const TSharedPtr<FJsonOb
 	bool bOnlyMaps = GetOptionalBool(Params, TEXT("only_maps"), false);
 
 	int32 SavedCount = 0;
+	int32 FailedCount = 0;
 	TArray<FString> SavedPackages;
+	TArray<FString> FailedPackages;
+	TArray<TSharedPtr<FJsonValue>> ErrorArray;
+
+	auto RecordFailure = [&FailedCount, &FailedPackages, &ErrorArray](const FString& PackageName, const FString& ErrorMessage)
+	{
+		FailedCount++;
+		FailedPackages.Add(PackageName);
+
+		TSharedPtr<FJsonObject> ErrorObject = MakeShared<FJsonObject>();
+		ErrorObject->SetStringField(TEXT("package"), PackageName);
+		ErrorObject->SetStringField(TEXT("error"), ErrorMessage);
+		ErrorArray.Add(MakeShared<FJsonValueObject>(ErrorObject));
+	};
 
 	if (bOnlyMaps)
 	{
@@ -958,17 +1391,15 @@ TSharedPtr<FJsonObject> FSaveAllAction::ExecuteInternal(const TSharedPtr<FJsonOb
 			UPackage* WorldPackage = World->GetOutermost();
 			if (WorldPackage && WorldPackage->IsDirty())
 			{
-				FString PackageFilename;
-				if (FPackageName::TryConvertLongPackageNameToFilename(
-					WorldPackage->GetName(), PackageFilename, FPackageName::GetMapPackageExtension()))
+				FString ErrorMessage;
+				if (FMCPCommonUtils::SavePackageSafely(WorldPackage, World, &ErrorMessage))
 				{
-					FSavePackageArgs SaveArgs;
-					SaveArgs.TopLevelFlags = RF_Standalone;
-					if (UPackage::SavePackage(WorldPackage, World, *PackageFilename, SaveArgs))
-					{
-						SavedCount++;
-						SavedPackages.Add(WorldPackage->GetName());
-					}
+					SavedCount++;
+					SavedPackages.Add(WorldPackage->GetName());
+				}
+				else
+				{
+					RecordFailure(WorldPackage->GetName(), ErrorMessage);
 				}
 			}
 		}
@@ -982,32 +1413,30 @@ TSharedPtr<FJsonObject> FSaveAllAction::ExecuteInternal(const TSharedPtr<FJsonOb
 		{
 			if (!Package) continue;
 
-			FString PackageFilename;
 			FString PackageName = Package->GetName();
 			bool bIsMap = Package->ContainsMap();
-			FString Extension = bIsMap ?
-				FPackageName::GetMapPackageExtension() :
-				FPackageName::GetAssetPackageExtension();
+			UObject* AssetToSave = bIsMap
+				? Package->FindAssetInPackage()
+				: FMCPCommonUtils::FindPrimaryAssetInPackage(Package);
 
-			if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, PackageFilename, Extension))
+			FString ErrorMessage;
+			if (FMCPCommonUtils::SavePackageSafely(Package, AssetToSave, &ErrorMessage))
 			{
-				FSavePackageArgs SaveArgs;
-				SaveArgs.TopLevelFlags = RF_Standalone;
-
-				UObject* AssetToSave = bIsMap ? Package->FindAssetInPackage() : nullptr;
-
-				if (UPackage::SavePackage(Package, AssetToSave, *PackageFilename, SaveArgs))
-				{
-					SavedCount++;
-					SavedPackages.Add(PackageName);
-					UE_LOG(LogMCP, Log, TEXT("UEEditorMCP SaveAll: Saved %s"), *PackageName);
-				}
+				SavedCount++;
+				SavedPackages.Add(PackageName);
+				UE_LOG(LogMCP, Log, TEXT("UEEditorMCP SaveAll: Saved %s"), *PackageName);
+			}
+			else
+			{
+				RecordFailure(PackageName, ErrorMessage);
+				UE_LOG(LogMCP, Warning, TEXT("UEEditorMCP SaveAll: Failed to save %s: %s"), *PackageName, *ErrorMessage);
 			}
 		}
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetNumberField(TEXT("saved_count"), SavedCount);
+	Result->SetNumberField(TEXT("failed_count"), FailedCount);
 
 	TArray<TSharedPtr<FJsonValue>> PackagesArray;
 	for (const FString& PkgName : SavedPackages)
@@ -1015,6 +1444,14 @@ TSharedPtr<FJsonObject> FSaveAllAction::ExecuteInternal(const TSharedPtr<FJsonOb
 		PackagesArray.Add(MakeShared<FJsonValueString>(PkgName));
 	}
 	Result->SetArrayField(TEXT("saved_packages"), PackagesArray);
+
+	TArray<TSharedPtr<FJsonValue>> FailedPackagesArray;
+	for (const FString& PkgName : FailedPackages)
+	{
+		FailedPackagesArray.Add(MakeShared<FJsonValueString>(PkgName));
+	}
+	Result->SetArrayField(TEXT("failed_packages"), FailedPackagesArray);
+	Result->SetArrayField(TEXT("errors"), ErrorArray);
 
 	return CreateSuccessResponse(Result);
 }
@@ -1124,6 +1561,116 @@ TSharedPtr<FJsonObject> FListAssetsAction::ExecuteInternal(const TSharedPtr<FJso
 	Result->SetNumberField(TEXT("total_unfiltered"), AssetList.Num());
 	Result->SetStringField(TEXT("path"), Path);
 	Result->SetArrayField(TEXT("assets"), AssetsArray);
+
+	return CreateSuccessResponse(Result);
+}
+
+// ========================================================================
+// FGetStaticMeshInfosAction
+// ========================================================================
+
+bool FGetStaticMeshInfosAction::Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError)
+{
+	const bool bHasSingle = Params->HasField(TEXT("static_mesh"));
+	const bool bHasBatch = Params->HasField(TEXT("static_meshes"));
+	if (!bHasSingle && !bHasBatch)
+	{
+		OutError = TEXT("Missing required 'static_mesh' or 'static_meshes' parameter");
+		return false;
+	}
+	return true;
+}
+
+TSharedPtr<FJsonObject> FGetStaticMeshInfosAction::ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context)
+{
+	TArray<FString> StaticMeshPaths;
+
+	FString SinglePath = GetOptionalString(Params, TEXT("static_mesh"));
+	if (!SinglePath.IsEmpty())
+	{
+		StaticMeshPaths.Add(SinglePath);
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* BatchValues = nullptr;
+	if (Params->TryGetArrayField(TEXT("static_meshes"), BatchValues) && BatchValues)
+	{
+		for (const TSharedPtr<FJsonValue>& Value : *BatchValues)
+		{
+			if (!Value.IsValid())
+			{
+				continue;
+			}
+
+			FString MeshPath;
+			if (Value->TryGetString(MeshPath) && !MeshPath.IsEmpty())
+			{
+				StaticMeshPaths.Add(MeshPath);
+			}
+		}
+	}
+
+	TArray<TSharedPtr<FJsonValue>> MeshInfoArray;
+	int32 SuccessCount = 0;
+	int32 FailedCount = 0;
+
+	for (const FString& StaticMeshPath : StaticMeshPaths)
+	{
+		TSharedPtr<FJsonObject> MeshInfo = StaticMeshToInfoJson(StaticMeshPath);
+		if (MeshInfo->GetBoolField(TEXT("success")))
+		{
+			SuccessCount++;
+		}
+		else
+		{
+			FailedCount++;
+		}
+		MeshInfoArray.Add(MakeShared<FJsonValueObject>(MeshInfo));
+	}
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetNumberField(TEXT("count"), MeshInfoArray.Num());
+	Result->SetNumberField(TEXT("success_count"), SuccessCount);
+	Result->SetNumberField(TEXT("failed_count"), FailedCount);
+	Result->SetArrayField(TEXT("static_meshes"), MeshInfoArray);
+
+	return CreateSuccessResponse(Result);
+}
+
+// ========================================================================
+// FDeleteAssetAction
+// ========================================================================
+
+bool FDeleteAssetAction::Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError)
+{
+	FString AssetPath;
+	return GetRequiredString(Params, TEXT("asset_path"), AssetPath, OutError);
+}
+
+TSharedPtr<FJsonObject> FDeleteAssetAction::ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context)
+{
+	FString AssetPath;
+	FString Error;
+	GetRequiredString(Params, TEXT("asset_path"), AssetPath, Error);
+
+	UObject* Asset = UEditorAssetLibrary::LoadAsset(AssetPath);
+	if (!Asset)
+	{
+		return CreateErrorResponse(
+			FString::Printf(TEXT("Asset not found: %s"), *AssetPath),
+			TEXT("asset_not_found"));
+	}
+
+	FString CanonicalPath;
+	FString DeleteError;
+	const bool bDeleted = FMCPCommonUtils::DeleteEditorAsset(Asset, CanonicalPath, DeleteError);
+	if (!bDeleted)
+	{
+		return CreateErrorResponse(DeleteError, TEXT("delete_failed"));
+	}
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("asset_path"), CanonicalPath.IsEmpty() ? AssetPath : CanonicalPath);
 
 	return CreateSuccessResponse(Result);
 }
@@ -2421,6 +2968,115 @@ TSharedPtr<FJsonObject> FRequestEditorShutdownAction::ExecuteInternal(const TSha
 		);
 	});
 
+	return CreateSuccessResponse(Result);
+}
+
+// ============================================================================
+// FExecutePythonAction
+// ============================================================================
+
+bool FExecutePythonAction::Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError)
+{
+	FString Code;
+	return GetRequiredString(Params, TEXT("code"), Code, OutError);
+}
+
+TSharedPtr<FJsonObject> FExecutePythonAction::ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context)
+{
+	FString Code;
+	FString Error;
+	GetRequiredString(Params, TEXT("code"), Code, Error);
+
+	IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
+	if (!PythonPlugin)
+	{
+		return CreateErrorResponse(TEXT("PythonScriptPlugin module is not loaded"), TEXT("python_unavailable"));
+	}
+	if (!PythonPlugin->IsPythonAvailable())
+	{
+		return CreateErrorResponse(TEXT("Python scripting is not available"), TEXT("python_unavailable"));
+	}
+
+	FTCHARToUTF8 Utf8Code(*Code);
+	TArray<uint8> CodeBytes(reinterpret_cast<const uint8*>(Utf8Code.Get()), Utf8Code.Length());
+	const FString Base64Code = FBase64::Encode(CodeBytes);
+
+	const FString WrapperCode = FString::Printf(TEXT(
+		"import unreal, json, sys, traceback, base64\n"
+		"from io import StringIO\n"
+		"_capture = StringIO()\n"
+		"_old_stdout, _old_stderr = sys.stdout, sys.stderr\n"
+		"sys.stdout = _capture\n"
+		"sys.stderr = _capture\n"
+		"_globals = {'unreal': unreal, '__builtins__': __builtins__}\n"
+		"_locals = {}\n"
+		"try:\n"
+		"    _code = base64.b64decode('%s').decode('utf-8')\n"
+		"    exec(_code, _globals, _locals)\n"
+		"    if 'result' in _locals:\n"
+		"        _result = _locals['result']\n"
+		"        try:\n"
+		"            json.dumps(_result, default=str)\n"
+		"        except (TypeError, ValueError):\n"
+		"            _result = str(_result)\n"
+		"    else:\n"
+		"        _output = _capture.getvalue().strip()\n"
+		"        _result = _output if _output else 'OK'\n"
+		"    _payload = {'result': _result}\n"
+		"except Exception:\n"
+		"    _payload = {'error': traceback.format_exc()}\n"
+		"finally:\n"
+		"    sys.stdout = _old_stdout\n"
+		"    sys.stderr = _old_stderr\n"
+		"print('__MCPRESULT__' + json.dumps(_payload, default=str))\n"
+	), *Base64Code);
+
+	FPythonCommandEx PythonCommand;
+	PythonCommand.Command = WrapperCode;
+	PythonCommand.ExecutionMode = EPythonCommandExecutionMode::ExecuteFile;
+	PythonCommand.FileExecutionScope = EPythonFileExecutionScope::Public;
+
+	PythonPlugin->ExecPythonCommandEx(PythonCommand);
+
+	FString JsonResult;
+	for (const FPythonLogOutputEntry& Entry : PythonCommand.LogOutput)
+	{
+		if (Entry.Output.StartsWith(TEXT("__MCPRESULT__")))
+		{
+			JsonResult = Entry.Output.Mid(13);
+			break;
+		}
+	}
+
+	if (JsonResult.IsEmpty())
+	{
+		const FString ErrorMessage = (!PythonCommand.CommandResult.IsEmpty() && PythonCommand.CommandResult != TEXT("None"))
+			? PythonCommand.CommandResult
+			: TEXT("No result from Python execution");
+		return CreateErrorResponse(ErrorMessage, TEXT("python_execution_failed"));
+	}
+
+	TSharedPtr<FJsonObject> ParsedResult;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonResult);
+	if (!FJsonSerializer::Deserialize(Reader, ParsedResult) || !ParsedResult.IsValid())
+	{
+		TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+		Result->SetStringField(TEXT("result"), JsonResult);
+		return CreateSuccessResponse(Result);
+	}
+
+	FString PythonError;
+	if (ParsedResult->TryGetStringField(TEXT("error"), PythonError))
+	{
+		return CreateErrorResponse(PythonError, TEXT("python_exception"));
+	}
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	const TSharedPtr<FJsonValue> ResultValue = ParsedResult->TryGetField(TEXT("result"));
+	if (ResultValue.IsValid())
+	{
+		Result->SetField(TEXT("result"), ResultValue);
+	}
 	return CreateSuccessResponse(Result);
 }
 

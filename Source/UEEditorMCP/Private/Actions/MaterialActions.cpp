@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/MaterialActions.h"
 #include "MCPContext.h"
 
@@ -79,25 +77,21 @@
 // Factory and editing
 #include "Factories/MaterialFactoryNew.h"
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
-#include "MaterialEditingLibrary.h"
 
 // Editor and asset utilities
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "EditorAssetLibrary.h"
 #include "Dom/JsonObject.h"
-#include "UObject/SavePackage.h"
 #include "Engine/World.h"
 #include "Editor.h"
 #include "Kismet/GameplayStatics.h"
 
 // Post process volume
 #include "Engine/PostProcessVolume.h"
-#include "Components/PostProcessComponent.h"
 #include "EngineUtils.h"  // For TActorIterator
 #include "ComponentReregisterContext.h"  // For FGlobalComponentReregisterContext
 
 // P5.1: Shader compilation manager (for material compile error retrieval)
-#include "ShaderCompiler.h"
 // P5.3: AssetEditorSubsystem (for finding preview material in editor)
 #include "Subsystems/AssetEditorSubsystem.h"
 // P5.3+: IMaterialEditor public API for selection queries across multiple open editors

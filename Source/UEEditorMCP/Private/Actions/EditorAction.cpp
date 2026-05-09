@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/EditorAction.h"
 #include "MCPCommonUtils.h"
 #include "Engine/Blueprint.h"
@@ -7,7 +5,6 @@
 #include "EdGraph/EdGraphNode.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 
 #if PLATFORM_WINDOWS && defined(_MSC_VER)
 #include "Windows/WindowsHWrapper.h"

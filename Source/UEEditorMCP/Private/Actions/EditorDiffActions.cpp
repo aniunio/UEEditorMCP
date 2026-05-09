@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/EditorDiffActions.h"
 
 #include "Engine/Blueprint.h"
@@ -21,7 +19,6 @@
 #include "GraphDiffControl.h"
 
 // Asset loading
-#include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 #include "Misc/PackageName.h"

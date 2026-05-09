@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "MCPBridge.h"
 #include "MCPServer.h"
 #include "Actions/EditorAction.h"
@@ -10,13 +8,12 @@
 #include "Actions/ProjectActions.h"
 #include "Actions/UMGActions.h"
 #include "Actions/MaterialActions.h"
+#include "Actions/NiagaraActions/NiagaraActions.h"
 #include "Actions/LayoutActions.h"
 #include "Actions/EditorDiffActions.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "Kismet/GameplayStatics.h"
 #include "Engine/Blueprint.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 #include "Editor.h"
 
 UMCPBridge::UMCPBridge()
@@ -87,15 +84,20 @@ void UMCPBridge::RegisterActions()
 	ActionHandlers.Add(TEXT("get_actors_in_level"), MakeShared<FGetActorsInLevelAction>());
 	ActionHandlers.Add(TEXT("find_actors_by_name"), MakeShared<FFindActorsByNameAction>());
 	ActionHandlers.Add(TEXT("spawn_actor"), MakeShared<FSpawnActorAction>());
+	ActionHandlers.Add(TEXT("spawn_static_mesh_actor"), MakeShared<FSpawnStaticMeshActorAction>());
 	ActionHandlers.Add(TEXT("delete_actor"), MakeShared<FDeleteActorAction>());
 	ActionHandlers.Add(TEXT("set_actor_transform"), MakeShared<FSetActorTransformAction>());
 	ActionHandlers.Add(TEXT("get_actor_properties"), MakeShared<FGetActorPropertiesAction>());
 	ActionHandlers.Add(TEXT("set_actor_property"), MakeShared<FSetActorPropertyAction>());
+	ActionHandlers.Add(TEXT("set_static_mesh_actor_material"), MakeShared<FSetStaticMeshActorMaterialAction>());
 	ActionHandlers.Add(TEXT("focus_viewport"), MakeShared<FFocusViewportAction>());
+	ActionHandlers.Add(TEXT("capture_viewport"), MakeShared<FCaptureViewportAction>());
 	ActionHandlers.Add(TEXT("get_viewport_transform"), MakeShared<FGetViewportTransformAction>());
 	ActionHandlers.Add(TEXT("set_viewport_transform"), MakeShared<FSetViewportTransformAction>());
 	ActionHandlers.Add(TEXT("save_all"), MakeShared<FSaveAllAction>());
 	ActionHandlers.Add(TEXT("list_assets"), MakeShared<FListAssetsAction>());
+	ActionHandlers.Add(TEXT("get_static_mesh_infos"), MakeShared<FGetStaticMeshInfosAction>());
+	ActionHandlers.Add(TEXT("delete_asset"), MakeShared<FDeleteAssetAction>());
 	ActionHandlers.Add(TEXT("rename_assets"), MakeShared<FRenameAssetsAction>());
 	ActionHandlers.Add(TEXT("get_selected_asset_thumbnail"), MakeShared<FGetSelectedAssetThumbnailAction>());
 	ActionHandlers.Add(TEXT("get_selected_assets"), MakeShared<FGetSelectedAssetsAction>());
@@ -106,6 +108,7 @@ void UMCPBridge::RegisterActions()
 	ActionHandlers.Add(TEXT("batch_execute"), MakeShared<FBatchExecuteAction>());
 	ActionHandlers.Add(TEXT("is_ready"), MakeShared<FEditorIsReadyAction>());
 	ActionHandlers.Add(TEXT("request_shutdown"), MakeShared<FRequestEditorShutdownAction>());
+	ActionHandlers.Add(TEXT("execute_python"), MakeShared<FExecutePythonAction>());
 
 	// =========================================================================
 	// Layout Actions - Auto-arrange Blueprint graph nodes
@@ -325,6 +328,11 @@ void UMCPBridge::RegisterActions()
 	ActionHandlers.Add(TEXT("apply_material_to_component"), MakeShared<FApplyMaterialToComponentAction>());
 	ActionHandlers.Add(TEXT("apply_material_to_actor"), MakeShared<FApplyMaterialToActorAction>());
 	ActionHandlers.Add(TEXT("refresh_material_editor"), MakeShared<FRefreshMaterialEditorAction>());
+
+	// =========================================================================
+	// Niagara Actions (systems, emitters, modules, graph, runtime)
+	// =========================================================================
+	NiagaraActionRegistration::RegisterAll(ActionHandlers);
 
 	// =========================================================================
 	// Diff Actions (Source Control)

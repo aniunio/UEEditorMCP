@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/GraphActions.h"
 #include "MCPCommonUtils.h"
 #include "MCPContext.h"
@@ -19,11 +17,7 @@
 #include "K2Node_IfThenElse.h"
 #include "K2Node_DynamicCast.h"
 #include "K2Node_MacroInstance.h"
-#include "K2Node_MakeStruct.h"
-#include "K2Node_BreakStruct.h"
 #include "K2Node_Self.h"
-#include "K2Node_FunctionEntry.h"
-#include "K2Node_FunctionResult.h"
 #include "K2Node_SpawnActorFromClass.h"
 #include "K2Node_Knot.h"
 #include "K2Node_CreateDelegate.h"
@@ -32,7 +26,6 @@
 #include "K2Node_FormatText.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
 #include "EdGraphUtilities.h"
 #include "UObject/UObjectIterator.h"
 

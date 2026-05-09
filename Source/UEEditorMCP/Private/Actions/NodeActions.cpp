@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/NodeActions.h"
 #include "MCPCommonUtils.h"
 #include "Engine/Blueprint.h"
@@ -33,15 +31,12 @@
 #include "Subsystems/LocalPlayerSubsystem.h"
 #include "Subsystems/EngineSubsystem.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/KismetStringLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "GameFramework/GameUserSettings.h"
-#include "Sound/SoundMix.h"
-#include "Sound/SoundClass.h"
 #include "K2Node_MakeStruct.h"
 #include "K2Node_BreakStruct.h"
 #include "K2Node_SwitchString.h"

@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"

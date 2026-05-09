@@ -36,7 +36,15 @@
 			"Enabled": true
 		},
 		{
+			"Name": "Niagara",
+			"Enabled": true
+		},
+		{
 			"Name": "ModelViewViewModel",
+			"Enabled": true
+		},
+		{
+			"Name": "PropertyBindingUtils",
 			"Enabled": true
 		}
 	]

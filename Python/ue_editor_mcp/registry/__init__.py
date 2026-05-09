@@ -10,8 +10,11 @@ No external dependencies — search uses simple keyword matching.
 
 from __future__ import annotations
 
+import importlib
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
+import sys
 from typing import Any
 
 
@@ -174,13 +177,35 @@ def _action_summary(a: ActionDef) -> dict[str, Any]:
 # ── singleton ───────────────────────────────────────────────────────
 
 _registry: ActionRegistry | None = None
+_registry_source_fingerprint: tuple[int, int] | None = None
+_ACTIONS_MODULE_NAME = f"{__package__}.actions"
+_ACTIONS_FILE = Path(__file__).with_name("actions.py")
+
+
+def _get_registry_source_fingerprint() -> tuple[int, int]:
+    """Return a cheap fingerprint for registry action definitions."""
+    stat = _ACTIONS_FILE.stat()
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _build_registry() -> ActionRegistry:
+    """(Re)build the registry from the latest actions module source."""
+    importlib.invalidate_caches()
+    actions_module = importlib.import_module(_ACTIONS_MODULE_NAME)
+    if _ACTIONS_MODULE_NAME in sys.modules:
+        actions_module = importlib.reload(actions_module)
+
+    registry = ActionRegistry()
+    actions_module.register_all_actions(registry)
+    return registry
 
 
 def get_registry() -> ActionRegistry:
-    """Get or create the global action registry (lazy-loaded)."""
-    global _registry
-    if _registry is None:
-        _registry = ActionRegistry()
-        from .actions import register_all_actions
-        register_all_actions(_registry)
+    """Get or rebuild the global action registry when action defs change."""
+    global _registry, _registry_source_fingerprint
+
+    fingerprint = _get_registry_source_fingerprint()
+    if _registry is None or _registry_source_fingerprint != fingerprint:
+        _registry = _build_registry()
+        _registry_source_fingerprint = fingerprint
     return _registry

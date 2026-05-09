@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "Actions/UMGActions.h"
 #include "MCPCommonUtils.h"
 #include "Editor.h"

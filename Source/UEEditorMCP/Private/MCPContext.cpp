@@ -1,14 +1,9 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "MCPContext.h"
 #include "Actions/EditorAction.h"
 #include "MCPCommonUtils.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"
-#include "Kismet2/BlueprintEditorUtils.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "UObject/SavePackage.h"
-#include "FileHelpers.h"
 #include "Misc/PackageName.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
@@ -112,7 +107,8 @@ void FMCPEditorContext::SaveDirtyPackages()
 	// UI dialogs (SVN checkout prompts, progress bars). These dialogs may spawn tiny
 	// windows (8x8 px) that trigger D3D12 swap chain creation, which fails with
 	// E_ACCESSDENIED (0x80070005) on some driver/GPU combos — causing a fatal crash.
-	// Direct UPackage::SavePackage is headless and safe for MCP automation context.
+	// SavePackageSafely keeps that headless path while returning save errors instead of
+	// routing invalid object references through fatal editor error handling.
 
 	int32 SavedCount = 0;
 	int32 FailedCount = 0;
@@ -127,30 +123,18 @@ void FMCPEditorContext::SaveDirtyPackages()
 
 		FString PackageName = Package->GetName();
 		bool bIsMap = Package->ContainsMap();
-		FString Extension = bIsMap
-			? FPackageName::GetMapPackageExtension()
-			: FPackageName::GetAssetPackageExtension();
+		UObject* AssetToSave = bIsMap
+			? Package->FindAssetInPackage()
+			: FMCPCommonUtils::FindPrimaryAssetInPackage(Package);
 
-		FString PackageFilename;
-		if (!FPackageName::TryConvertLongPackageNameToFilename(PackageName, PackageFilename, Extension))
-		{
-			UE_LOG(LogMCP, Warning, TEXT("UEEditorMCP: SaveDirtyPackages - Could not resolve filename for '%s', skipping"), *PackageName);
-			FailedCount++;
-			continue;
-		}
-
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Standalone;
-
-		UObject* AssetToSave = bIsMap ? Package->FindAssetInPackage() : nullptr;
-
-		if (UPackage::SavePackage(Package, AssetToSave, *PackageFilename, SaveArgs))
+		FString ErrorMessage;
+		if (FMCPCommonUtils::SavePackageSafely(Package, AssetToSave, &ErrorMessage))
 		{
 			SavedCount++;
 		}
 		else
 		{
-			UE_LOG(LogMCP, Warning, TEXT("UEEditorMCP: SaveDirtyPackages - Failed to save '%s'"), *PackageName);
+			UE_LOG(LogMCP, Warning, TEXT("UEEditorMCP: SaveDirtyPackages - Failed to save '%s': %s"), *PackageName, *ErrorMessage);
 			FailedCount++;
 		}
 	}

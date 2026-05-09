@@ -1,54 +1,41 @@
 #pragma once
 
-#include "CoreMinimal.h"
-#include "Actions/EditorAction.h"
+#include "Actions/NiagaraActions/NiagaraActions.h"
 
-/**
- * Create legacy input mapping (Action or Axis)
- */
-class UEEDITORMCP_API FCreateInputMappingAction : public FEditorAction
+class UEEDITORMCP_API FSpawnNiagaraEffectAction : public FEditorAction
 {
 public:
-	virtual FString GetActionName() const override { return TEXT("CreateInputMapping"); }
+	virtual FString GetActionName() const override;
 
 protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
 	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
 };
 
-/**
- * Create Enhanced Input Action asset
- */
-class UEEDITORMCP_API FCreateInputActionAction : public FEditorAction
+class UEEDITORMCP_API FControlNiagaraEffectAction : public FEditorAction
 {
 public:
-	virtual FString GetActionName() const override { return TEXT("CreateInputAction"); }
+	virtual FString GetActionName() const override;
 
 protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
 	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
 };
 
-/**
- * Create Enhanced Input Mapping Context asset
- */
-class UEEDITORMCP_API FCreateInputMappingContextAction : public FEditorAction
+class UEEDITORMCP_API FAddNiagaraComponentAction : public FEditorAction
 {
 public:
-	virtual FString GetActionName() const override { return TEXT("CreateInputMappingContext"); }
+	virtual FString GetActionName() const override;
 
 protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;
 	virtual TSharedPtr<FJsonObject> ExecuteInternal(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context) override;
 };
 
-/**
- * Add key mapping to Input Mapping Context with optional modifiers
- */
-class UEEDITORMCP_API FAddKeyMappingToContextAction : public FEditorAction
+class UEEDITORMCP_API FGetNiagaraActorsAction : public FEditorAction
 {
 public:
-	virtual FString GetActionName() const override { return TEXT("AddKeyMappingToContext"); }
+	virtual FString GetActionName() const override;
 
 protected:
 	virtual bool Validate(const TSharedPtr<FJsonObject>& Params, FMCPEditorContext& Context, FString& OutError) override;

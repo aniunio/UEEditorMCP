@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "MCPCommonUtils.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/Blueprint.h"
@@ -13,14 +11,20 @@
 #include "EdGraphSchema_K2_Actions.h"
 #include "K2Node_Event.h"
 #include "K2Node_CallFunction.h"
-#include "K2Node_VariableGet.h"
-#include "K2Node_VariableSet.h"
 #include "K2Node_Self.h"
 #include "K2Node_InputAction.h"
 #include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
 #include "GameFramework/Actor.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
 #include "EditorAssetLibrary.h"
+#include "Editor.h"
+#include "Misc/OutputDevice.h"
+#include "Misc/PackageName.h"
+#include "Subsystems/AssetEditorSubsystem.h"
+#include "UObject/SavePackage.h"
+#include "UObject/UObjectGlobals.h"
+#include "UObject/UObjectIterator.h"
 
 // =========================================================================
 // JSON Parsing Utilities
@@ -586,6 +590,305 @@ TSharedPtr<FJsonObject> FMCPCommonUtils::CreateErrorResponse(const FString& Erro
 	Response->SetBoolField(TEXT("success"), false);
 	Response->SetStringField(TEXT("error"), ErrorMessage);
 	return Response;
+}
+
+namespace
+{
+	class FMCPStringOutputDevice final : public FOutputDevice
+	{
+	public:
+		void Serialize(const TCHAR* V, ELogVerbosity::Type Verbosity, const FName& Category) override
+		{
+			const FString Line = FString::Printf(TEXT("[%s] %s"), *Category.ToString(), V ? V : TEXT(""));
+			if (!Line.IsEmpty())
+			{
+				Lines.Add(Line);
+			}
+		}
+
+		FString ToString() const
+		{
+			return FString::Join(Lines, TEXT("\n"));
+		}
+
+	private:
+		TArray<FString> Lines;
+	};
+
+	bool HasExternalPrivateReference(UPackage* Package, FString& OutErrorMessage)
+	{
+		if (!Package)
+		{
+			return false;
+		}
+
+		for (FThreadSafeObjectIterator It; It; ++It)
+		{
+			UObject* Referencer = *It;
+			if (!Referencer || Referencer->GetOutermost() != Package)
+			{
+				continue;
+			}
+			if (Referencer->HasAnyFlags(RF_ClassDefaultObject))
+			{
+				continue;
+			}
+
+			TArray<UObject*> References;
+			FReferenceFinder ReferenceFinder(References, nullptr, false, true, false, true);
+			ReferenceFinder.FindReferences(Referencer);
+
+			for (UObject* Reference : References)
+			{
+				if (!Reference || Reference->GetOutermost() == Package)
+				{
+					continue;
+				}
+				if (Reference->HasAnyFlags(RF_Public))
+				{
+					continue;
+				}
+
+				OutErrorMessage = FString::Printf(
+					TEXT("Refusing to save package '%s' because '%s' references private external object '%s'. This usually means a template-owned subobject was copied by reference instead of duplicated."),
+					*Package->GetName(),
+					*Referencer->GetPathName(),
+					*Reference->GetPathName());
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+UObject* FMCPCommonUtils::FindPrimaryAssetInPackage(UPackage* Package)
+{
+	if (!Package)
+	{
+		return nullptr;
+	}
+
+	if (UObject* Asset = Package->FindAssetInPackage())
+	{
+		return Asset;
+	}
+
+	for (FThreadSafeObjectIterator It; It; ++It)
+	{
+		UObject* Candidate = *It;
+		if (!Candidate || Candidate->GetOutermost() != Package)
+		{
+			continue;
+		}
+		if (Candidate->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject | RF_DefaultSubObject))
+		{
+			continue;
+		}
+		if (Candidate->GetOuter() != Package)
+		{
+			continue;
+		}
+		return Candidate;
+	}
+
+	return nullptr;
+}
+
+bool FMCPCommonUtils::SavePackageSafely(UPackage* Package, UObject* AssetToSave, FString* OutErrorMessage)
+{
+	if (!Package)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = TEXT("Package is null");
+		}
+		return false;
+	}
+
+	const bool bIsMap = Package->ContainsMap();
+	const FString Extension = bIsMap
+		? FPackageName::GetMapPackageExtension()
+		: FPackageName::GetAssetPackageExtension();
+
+	FString PackageFilename;
+	if (!FPackageName::TryConvertLongPackageNameToFilename(Package->GetName(), PackageFilename, Extension))
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Could not resolve filename for package '%s'"), *Package->GetName());
+		}
+		return false;
+	}
+
+	UObject* ResolvedAsset = AssetToSave ? AssetToSave : FindPrimaryAssetInPackage(Package);
+	if (!ResolvedAsset)
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = FString::Printf(TEXT("Could not resolve root asset for package '%s'"), *Package->GetName());
+		}
+		return false;
+	}
+
+	FString PrivateReferenceError;
+	if (!bIsMap && HasExternalPrivateReference(Package, PrivateReferenceError))
+	{
+		if (OutErrorMessage)
+		{
+			*OutErrorMessage = PrivateReferenceError;
+		}
+		return false;
+	}
+
+	FMCPStringOutputDevice ErrorCollector;
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Standalone;
+	SaveArgs.bSlowTask = false;
+	SaveArgs.Error = &ErrorCollector;
+
+	const bool bSaved = UPackage::SavePackage(Package, ResolvedAsset, *PackageFilename, SaveArgs);
+	if (!bSaved && OutErrorMessage)
+	{
+		const FString SaveErrors = ErrorCollector.ToString();
+		*OutErrorMessage = SaveErrors.IsEmpty()
+			? FString::Printf(TEXT("Failed to save package '%s'"), *Package->GetName())
+			: SaveErrors;
+	}
+
+	return bSaved;
+}
+
+// =========================================================================
+// Asset Utilities
+// =========================================================================
+
+bool FMCPCommonUtils::TrySplitAssetPath(
+	const FString& AssetPath,
+	FString& OutPackagePath,
+	FString& OutAssetName,
+	FString& OutErrorMessage)
+{
+	int32 LastSlash = INDEX_NONE;
+	if (!AssetPath.FindLastChar(TEXT('/'), LastSlash) || LastSlash <= 0)
+	{
+		OutErrorMessage = TEXT("Invalid asset path. Expected '/Game/Path/AssetName'");
+		return false;
+	}
+
+	OutPackagePath = AssetPath.Left(LastSlash);
+	OutAssetName = AssetPath.Mid(LastSlash + 1);
+	if (OutAssetName.IsEmpty())
+	{
+		OutErrorMessage = TEXT("Asset name is empty");
+		return false;
+	}
+
+	if (!FPackageName::IsValidLongPackageName(OutPackagePath / OutAssetName))
+	{
+		OutErrorMessage = FString::Printf(TEXT("Invalid package path: %s"), *AssetPath);
+		return false;
+	}
+
+	return true;
+}
+
+UObject* FMCPCommonUtils::CreateEditorAsset(
+	const FString& AssetPath,
+	UClass* AssetClass,
+	UFactory* Factory,
+	FString& OutPackagePath,
+	FString& OutAssetName,
+	FString& OutErrorMessage)
+{
+	if (!AssetClass)
+	{
+		OutErrorMessage = TEXT("Asset class is null");
+		return nullptr;
+	}
+
+	if (UEditorAssetLibrary::DoesAssetExist(AssetPath))
+	{
+		OutErrorMessage = FString::Printf(TEXT("Asset already exists: %s"), *AssetPath);
+		return nullptr;
+	}
+
+	if (!TrySplitAssetPath(AssetPath, OutPackagePath, OutAssetName, OutErrorMessage))
+	{
+		return nullptr;
+	}
+
+	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+	UObject* Asset = AssetTools.CreateAsset(OutAssetName, OutPackagePath, AssetClass, Factory);
+	if (!Asset)
+	{
+		OutErrorMessage = FString::Printf(TEXT("Failed to create asset: %s"), *AssetPath);
+		return nullptr;
+	}
+
+	return Asset;
+}
+
+UObject* FMCPCommonUtils::DuplicateEditorAsset(
+	UObject* SourceAsset,
+	const FString& AssetPath,
+	FString& OutPackagePath,
+	FString& OutAssetName,
+	FString& OutErrorMessage)
+{
+	if (!SourceAsset)
+	{
+		OutErrorMessage = TEXT("Source asset is null");
+		return nullptr;
+	}
+
+	if (UEditorAssetLibrary::DoesAssetExist(AssetPath))
+	{
+		OutErrorMessage = FString::Printf(TEXT("Asset already exists: %s"), *AssetPath);
+		return nullptr;
+	}
+
+	if (!TrySplitAssetPath(AssetPath, OutPackagePath, OutAssetName, OutErrorMessage))
+	{
+		return nullptr;
+	}
+
+	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+	UObject* Asset = AssetTools.DuplicateAsset(OutAssetName, OutPackagePath, SourceAsset);
+	if (!Asset)
+	{
+		OutErrorMessage = FString::Printf(TEXT("Failed to duplicate asset to: %s"), *AssetPath);
+		return nullptr;
+	}
+
+	return Asset;
+}
+
+bool FMCPCommonUtils::DeleteEditorAsset(UObject* Asset, FString& OutCanonicalPath, FString& OutErrorMessage)
+{
+	if (!Asset)
+	{
+		OutErrorMessage = TEXT("Asset is null");
+		return false;
+	}
+
+	OutCanonicalPath = UEditorAssetLibrary::GetPathNameForLoadedAsset(Asset);
+
+	if (GEditor)
+	{
+		if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+		{
+			AssetEditorSubsystem->CloseAllEditorsForAsset(Asset);
+		}
+	}
+
+	if (!UEditorAssetLibrary::DeleteLoadedAsset(Asset))
+	{
+		OutErrorMessage = TEXT("Failed to delete asset");
+		return false;
+	}
+
+	return true;
 }
 
 // =========================================================================

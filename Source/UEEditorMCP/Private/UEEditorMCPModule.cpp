@@ -1,5 +1,3 @@
-// Copyright (c) 2025 zolnoor. All rights reserved.
-
 #include "UEEditorMCPModule.h"
 #include "BlueprintAutoLayoutCommands.h"
 #include "Actions/LayoutActions.h"
@@ -25,7 +23,6 @@
 #include "Materials/MaterialExpression.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Materials/MaterialExpressionCustom.h"
-#include "Materials/MaterialExpressionReroute.h"
 #include "MaterialGraph/MaterialGraph.h"
 #include "MaterialGraph/MaterialGraphNode.h"
 #include "MaterialGraph/MaterialGraphNode_Root.h"
