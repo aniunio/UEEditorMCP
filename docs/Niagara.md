@@ -13,6 +13,28 @@ Niagara System
        └─ ...（同上）
 ```
 
+## 示例：创建并编译一个 Niagara System。
+
+```json
+{
+    "action_id": "niagara.create_system",
+    "params": {
+        "asset_path": "/Game/FX/NS_AI_Test",
+        "template": "simple_sprite"
+    }
+}
+```
+
+```json
+{
+    "action_id": "niagara.compile_system",
+    "params": {
+        "system_path": "/Game/FX/NS_AI_Test.NS_AI_Test",
+        "wait_for_completion": true
+    }
+}
+```
+
 ## Niagara Action 工具说明
 
 本文档对应 `Plugins/UEEditorMCP/Source/UEEditorMCP/Private/Actions/NiagaraActions/NiagaraActions.cpp` 中注册的 Niagara Actions。标题中的第一个名字是 C++ command，括号里是 Python registry 暴露给 `ue_actions_run` 的工具 ID。
